@@ -44,6 +44,15 @@ local function ai_scanMemory(args)
   
   aiobjects[i]=ms
   local r={status='success', scanID=i, foundCount=ms.FoundCount, message='Found '..ms.FoundCount..' results'}
+  if ms.FoundCount<=5 then
+    r.Addresses={}
+    local results=ms.Results
+    
+    for i=1,#results do      
+      r.Addresses[i]=string.format('0x%.8x',results[i])
+    end    
+  end
+  
    
   return r
   --return a scannerid
@@ -67,12 +76,28 @@ local function ai_refineScan(args)
   end
   
   ms.scan()
+  ms.waitTillDone()
+  
+  if ms.ErrorString and ms.ErrorString~='' then
+    local err=ms.ErrorString
+    ms.destroy()
+    return {error='Scan error:'..err}
+  end  
+  
+  local r={status='success', foundCount=ms.FoundCount, message='Found '..ms.FoundCount..' results'}  
 
-  return {error='not yet implemented'}
+  if ms.FoundCount<=5 then
+    r.Addresses={}
+    local results=ms.Results
     
+    for i=1,#results do      
+      r.Addresses[i]=string.format('0x%.8x',results[i])
+    end    
+  end
+  return r    
 end
 
-local function ai_getResults(args) --startindex, count
+local function ai_getResultsAndValues(args) --startindex, count
   local scannerid=args.scannerid  
 end
 
@@ -132,7 +157,7 @@ registerAITool('refineScan', 'refines a previously made scan',
                                               {'scanID', 'value'}, --required
                                               ai_refineScan) --function
                                                
-                                              
+                                          
 
 --nuclear option:
 --registerAITool('executeLuaCode','Execute any lua code inside the current Cheat Engine instance', {},{},ai_executeCode)

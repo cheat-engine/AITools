@@ -344,7 +344,7 @@ x-goog-api-key: ]]..AIKEY
 
   if AIAccess==2 and data.self then
     local mlindex=data.self.cbModelSelection.ItemIndex+1
-    if mlindex>0 then
+    if mlindex>0 and #modelList>=mlindex then
       modelname=modelList[mlindex].name      
       s.DefaultModel=modelname
     else
@@ -412,19 +412,6 @@ x-goog-api-key: ]]..AIKEY
     input.tools=nil
   end
   
-  
- --[[ 
-  input.tools[1]={}
-  input.tools[1].functionDeclarations={}
-  input.tools[1].functionDeclarations[1]={}
-  input.tools[1].functionDeclarations[1].name='getName'
-  input.tools[1].functionDeclarations[1].description='Returns the name of the current user.'
-  input.tools[1].functionDeclarations[1].parameters={}
-  input.tools[1].functionDeclarations[1].parameters.type="OBJECT"
-  input.tools[1].functionDeclarations[1].parameters.properties={}
-  input.tools[1].functionDeclarations[1].parameters.required={} --must be an array . empty tables are handled as objects by default unless it has a metatable entry names isArray
-  setmetatable(input.tools[1].functionDeclarations[1].parameters.required,{isArray=true})
---]]
 
   data.history=input
 
@@ -451,6 +438,7 @@ x-goog-api-key: ]]..AIKEY
     end
     
     data.usedurl=url
+    data.lastinputtext=inputtext
     
 
     result=data.Internet.postURL(url, inputtext)
@@ -647,8 +635,8 @@ function spawnAIDialog(command, extra) --command and extra are optional
     destroyRef(f.Tag)
     
     applyAndSaveKey(f)
-
     
+    f=nil    
     return caFree
   end
 
@@ -677,7 +665,7 @@ function spawnAIDialog(command, extra) --command and extra are optional
       local direction = 1
       local maxLength = 7
       
-      animator=createTimer()
+      animator=createTimer(f)
       animator.Enabled=false
       animator.Interval=50
       animator.OnTimer=function(t)
@@ -861,7 +849,7 @@ function initAIMenuItems()
   require('forEachForm')
   
   local logo=createPNG()
-  logo.loadFromFile(getAutoRunPath()..[[images\AI128x128.png]])
+  logo.loadFromFile(basepath..'AI128x128.png')
 
   
   --"Explain this function" inside the memoryview context menu
