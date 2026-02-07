@@ -12,7 +12,11 @@ local function ai_openProcess(args)
   if processname then
     local r  
     r=openProcess(processname)
-    return {result=r} 
+    if r then
+      return {result='Success', currentProcessID=getOpenedProcessID()}      
+    else
+      return {error='Failure opening '..processname}
+    end
   else
     return {error='No processname provided'}
   end   
@@ -99,12 +103,268 @@ end
 
 local function ai_getResultsAndValues(args) --startindex, count
   local scannerid=args.scannerid  
+  local startindex=args.startindex
+  local count=args.count
+  
+  local ms=aiobjects[scannerid]
+  if ms==nil or ms.ClassName~='TMemScan' then
+    print("ai_getResultsAndValues: incorrect scannerid")
+    return {error='the scanID was incorrect'}
+  end 
+  
+  local r={}
+  local al=createFoundList(ms)
+  al.initialize()
+  for i=startindex,count do
+    local e={}
+    e.index=i
+    e.address=al.Address[i]
+    e.value=al.Value[i]
+    
+    table.insert(r,e)
+  end
+  
+  al.deinitialize()  
+  al.destroy() al=nil
+  
+  return r
+end
+
+function ai_startWatchpoint(args)
+  local address=args.address
+  local watchsize=args.watchsize or 1
+  local watchtype=_G[args.watchtype] or bptAccess  
+  
+  if address then
+    local a=getAddressSafe(address)
+    if a then
+      local id=#aiobjects+1
+      local data={}
+      data.type='watchpoint'      
+      data.results={}      
+      data.resultsLookupActual={}
+      aiobjects[id]=data
+
+      
+
+      local r,r2=debug_setBreakpoint(a,watchsize,watchtype,function()
+        --add to data.result
+        print("bp triggered")
+        local instructionPointer
+               
+        local r={}        
+        r.context=debug_getContextTable()
+        
+        if r.context then
+          if targetIsX86() then
+            if targetIs64Bit() then
+              r.InstructionPointer=r.context.RIP 
+              r.StackPointer=r.context.RSP
+            else
+              r.InstructionPointer=r.context.EIP
+              r.StackPointer=r.context.ESP
+            end            
+          elseif targetIsArm() then
+            r.InstructionPointer=r.context.PC
+            r.StackPointer=r.context.SP
+          end 
+
+          if data.results[r.InstructionPointer] then
+            r=data.results[r.InstructionPointer]
+            r.count=r.count+1
+          else
+             --first time. get some extra info
+            data.results[r.InstructionPointer]=r
+            r.count=1          
+            
+            local start,stop=getFunctionRange(getFunctionRange(r.InstructionPointer))
+            r.functionRange={start=start,stop=stop}
+
+            --get the actual instruction pointer
+            --test for rep            
+            local d=createDisassembler()    
+            d.showSymbols=true            
+            d.showModules=true
+            
+            d.disassemble(r.InstructionPointer)
+            if d.LastDisassembleData.isRep then
+              r.actualInstructionPointer=r.InstructionPointer
+            else
+              r.actualInstructionPointer=getPreviousOpcode(r.InstructionPointer)
+              d.disassemble(r.actualInstructionPointer)
+            end
+            data.resultsLookupActual[r.actualInstructionPointer]=r --for quick lookup
+            
+            r.contextExt=debug_getContextTable(true)
+            
+            --delete from contextExt the nonExt parts
+            for name,val in pairs(r.context) do
+              r.contextExt[name]=nil
+            end
+            
+            r.stack=readBytes(r.StackPointer,1024, true)
+            
+            r.stacktrace=stacktrace(r.StackPointer,1024)
+            
+            
+            r.opcode=d.LastDisassembleData.opcode ..' '..d.LastDisassembleData.parameters
+            r.opcodesize=#d.LastDisassembleData.bytes
+            d.destroy() d=nil            
+          end
+        end
+      end)
+      
+      if r then
+        data.breakpointid=r2
+        return {status='success', watchpointID=id}        
+      else
+        aiobjects[id]=nil --nevermind
+        if r2==nil then r2='failure for an unknown reason' end
+        return {error=r2}      
+      end
+    else
+      return {error='Failure interpreting what the address `'..address..'` meant'}
+    end
+  else
+    return {error='address was not provided or unparsable'}
+  end
+end
+
+function ai_stopWatchpoint(args)
+  local watchpointID=args.watchpointID
+  if watchpointID then
+    local data=aiobjects[watchpointID]
+    if data then
+      if data.type~='watchpoint' then
+        return {error='watchpointID corrupted'}
+      end
+      local r,err=debug_removeBreakpointByID(data.breakpointid)
+      if r then
+        aiobjects[watchpointID].stopped=true
+        return {status='success'}
+      else
+        if err==nil then      
+          return {error='failure removing the watchpoint'}
+        else
+          return {error=err}
+        end
+      end
+    else
+      return {error='watchpointID invalid'}
+    end
+  else
+    return {error='watchpointID missing'}
+  end
+end
+
+function ai_deleteWatchpoint(args)
+  local watchpointID=args.watchpointID
+  if watchpointID then
+    local data=aiobjects[watchpointID]
+    if data.stopped==false then
+      local r=ai_stopWatchpoint(args)
+      if r.error then
+        return r
+      end           
+    end
+    
+    aiobjects[watchpointID]=nil
+    return {status='success'}
+  else
+    return {error='watchpointID missing'}
+  end
+end
+
+function ai_queryWatchPointStatus(args)
+  local watchpointID=args.watchpointID
+  if watchpointID then
+    local r={}
+    local data=aiobjects[watchpointID]
+    if data.type~='watchpoint' then
+      return {error='watchpointID corrupted'}
+    end
+    
+    if data.results==nil then
+      return {error='watchpointID result data missing'}
+    end
+    
+    for instructionPointer,result in pairs(data.results) do
+      local e={}
+      e.InstructionAddress=format("%x",result.actualInstructionPointer) --needs to be a string
+      e.Opcode=result.opcode
+      e.Count=result.count
+      
+      table.insert(r,e)
+    end    
+    
+    return {status='success', results=r}
+  else
+    return {error='watchpointID missing'}
+  end 
 end
 
 
+function ai_getDetailedWatchpointData(args)
+  local watchpointID=args.watchpointID
+  local address=getAddressSafe(args.address)
+  local datatypes=args.datatypes
+  if address==nil then
+    return {error='address was not provided or unparsable'}
+  end
+  if watchpointID then
+    local data=aiobjects[watchpointID]
+    
+    if data.type~='watchpoint' then
+      return {error='watchpointID corrupted'}
+    end
+    
+    if data.results==nil then
+      return {error='watchpointID result data missing'}
+    end
+    
+    local e=data.resultsLookupActual[address]
+    if e==nil then
+      return {error='invalid address'}
+    end
+    
+    local r={}
+
+    if datatypes.wpFunctionRange then
+      r.functionRange=e.functionRange
+    end    
+    
+    if datatype.wpRegisters then
+      r.registers=e.context
+    end
+    
+    if datatype.wpExtendedRegisters then
+      r.extendedRegisters=e.contextExt
+    end    
+    
+    if datatype.wpStackTrace then
+      r.stacktrace=e.stacktrace
+    end
+    
+    if datatype.wpStackView then      
+      local s=''
+      local stackSnapshotSize=args.stackSnapshotSize or 32      
+      
+      local i=1,stackSnapshotSize do
+        s=s..format('%.2x ',e.stack[i])
+      end
+      
+      r.stackview=s
+    end
+    
+    return {status='success', results=r}
+  else
+    return {error='watchpointID missing'}
+  end 
+end
+
 
 registerAITool('getOpenedProcessName','Returns the currently opened processname. (the executable)', {},{},ai_getOpenedProcessName)
-registerAITool('openProcess','Opens the the most recent process with this name. Result is true on success', {processname={type='STRING',description='name of the process to open'}},{"processname"},ai_openProcess)
+registerAITool('openProcess','Opens the the most recent process with this name. Result is true on success and also provides the processID', {processname={type='STRING',description='name of the process to open'}},{"processname"},ai_openProcess)
 registerAITool('scanMemory','Scan for a value and get a scannerID. This scannerID can be used to obtain the results and do a refineScan', 
                                              {value={type='STRING',description='the value to scan for'}, 
                                               value2={type='STRING',description='when scanoption is soValueBetween this determines the second part of the range'}, 
@@ -156,8 +416,72 @@ registerAITool('refineScan', 'refines a previously made scan',
                                               },
                                               {'scanID', 'value'}, --required
                                               ai_refineScan) --function
+                                              
+registerAITool('getResultsAndValues', [[Retrieves a view of the results of the given scanID. each entry has: 
+                                          - address: It holds the address in hexadecimal string format and for the ALL type it also contains an identifier what type it is 
+                                          - value : The value this address currently holds. the value '???' means it is unreadable
+                                          - index : the index number of the results ]],                                           
+                                             {
+                                             scanID={type='INTEGER', description='the scanID returned by the initial call to scanMemory'},
+                                             index={type='INTEGER',description='The start index of the results. Index starts at 0'}, 
+                                             count={type='INTEGER',description='The number of results to retrieve'}
+                                             }, --parameters
+                                             {'scanID', 'index', 'count'}, --required
+                                             ai_getResultsAndValues) --function                  
+
+registerAITool('startWatchpoint', [[Sets a watchpoint at a given address so that each time it is hit collects data and then continues the target. The function returns a watchpointID which you can use with the queryWatchPointStatus function and later with the stopWatchpoint function]],
+                                             {
+                                             address={type='STRING', description='The address to watch for memory accesses. Formatted as hexadecimal or a symbol recognized by Cheat Engine'},                 
+                                             watchsize={type='INTEGER', description='The size in bytes for the watchpoint. default 1'},
+                                             watchtype={type='STRING', enum={'bptAccess','bptWrite'}, 
+                                                        description=[[What kind of watch to use. 
+                                                                        - bptAccess: will record every access (default if not set)
+                                                                        - bptWrite will only record writes]] }
+                                             }, --parameters
+                                             {'address'}, --required
+                                             ai_startWatchpoint) --function         
                                                
-                                          
+     
+registerAITool('stopWatchpoint', [[Stops a previously created watchpoint but doesn't delete the data yet]],
+                                             {
+                                             watchpointID={type='INTEGER', description='The watchpointID returned by startWatchpoint'},                                                              
+                                             }, --parameters
+                                             {'watchpointID'}, --required
+                                             ai_stopWatchpoint) --function  
+                                             
+registerAITool('deleteWatchpoint', [[Stops a previously created watchpoint if it wasn't stopped yet, and deletes the gathered data. The watchpointID will be invalid after that]],
+                                             {
+                                             watchpointID={type='INTEGER', description='The watchpointID returned by startWatchpoint'},                                                              
+                                             }, --parameters
+                                             {'watchpointID'}, --required
+                                             ai_deleteWatchpoint) --function                                               
+                                             
+registerAITool('queryWatchPointStatus', [[Retrieves a list of entries containing the instruction address, the opcode and the number of times that instruction was encountered during the watchpoint recording. The InstructionAddress can be used with getDetailedWatchpointData to obtain more information]],
+                                             {
+                                             watchpointID={type='INTEGER', description='The watchpointID returned by startWatchpoint'},                                                              
+                                             }, --parameters
+                                             {'watchpointID'}, --required
+                                             ai_queryWatchPointStatus) --function  
+                                             
+registerAITool('getDetailedWatchpointData', [[Retrieves detailed data about a watchpoint]],
+                                             {
+                                             watchpointID={type='INTEGER', description='The watchpointID returned by startWatchpoint'},                                                              
+                                             address={type='STRING', description='The instruction address returned by queryWatchPointStatus'},                                                                                                           
+                                             datatypes={type="ARRAY", 
+                                                        items={'wpFunctionRange', 'wpRegisters','wpExtendedRegisters', 'wpStackTrace', 'wpStackView32', 'wpStackView128', 'wpStackView1024'},
+                                                        description=[[A list of optional data to retrieve
+                                                          - wpFunctionRange : The start and stop address of the function the instruction is in
+                                                          - wpRegisters : The list of general purpose registers and their values. Keep in mind these are from after the instruction was executed
+                                                          - wpExtendedRegisters: The extra registers like the floating point unit registers, XMM registers, etc... depending on the architecture
+                                                          - wpStackTrace: a stacktrace showing the return addresses
+                                                          - wpStackView: a byte snapshot of the stack. Provide stackSnapshotSize else the size will be 32                                                      
+                                                        ]]},
+                                             stackSnapshotSize={type='INTEGER', description='if datatype wpStackView is present it indicates the number of bytes of the stack snapshot to retrieve. Max 1024'},  
+                                             }, --parameters
+                                             {'watchpointID','address', 'datatypes'}, --required
+                                             ai_getDetailedWatchpointData) --function  
+                                             
+     
 
 --nuclear option:
 --registerAITool('executeLuaCode','Execute any lua code inside the current Cheat Engine instance', {},{},ai_executeCode)

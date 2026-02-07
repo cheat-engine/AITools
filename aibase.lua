@@ -296,6 +296,7 @@ x-goog-api-key: ]]..AIKEY
                   if parsed.candidates[1].content.parts[i] and parsed.candidates[1].content.parts[i].text then
                     synchronize(function()  
                       data.self.mOutput.lines.text=data.self.mOutput.lines.text .. parsed.candidates[1].content.parts[i].text
+                      data.self.mOutput.SelStart=#data.self.mOutput.lines.text                      
                     end)
                   end
                 end
@@ -310,7 +311,7 @@ x-goog-api-key: ]]..AIKEY
                 message=parsed.error
               end
               synchronize(function() 
-                data.self.mOutput.lines.text=data.self.mOutput.lines.text.."\nError:"..message
+                data.self.mOutput.lines.add("Error:"..message)
               end)
             end
 
@@ -344,7 +345,7 @@ x-goog-api-key: ]]..AIKEY
 
   if AIAccess==2 and data.self then
     local mlindex=data.self.cbModelSelection.ItemIndex+1
-    if mlindex>0 and #modelList>=mlindex then
+    if mlindex>0 and modelList and #modelList>=mlindex then
       modelname=modelList[mlindex].name      
       s.DefaultModel=modelname
     else
@@ -653,6 +654,13 @@ function spawnAIDialog(command, extra) --command and extra are optional
   
   f.btnSend.OnClick=function(sender)
     --collect the history if there is any (data can be accessed here directly)
+    if f.mOutput.Lines.Count>0 then
+      f.mOutput.Lines.add('')
+    end 
+
+    f.mOutput.Lines.add('> '..f.mInput.Lines.Text)
+    f.mInput.Lines.clear()
+
     f.btnSend.enabled=false
     if f.mOutput.Lines.Count>0 then
       f.mOutput.Lines.add('')
