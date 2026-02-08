@@ -102,7 +102,7 @@ local function ai_refineScan(args)
 end
 
 local function ai_getResultsAndValues(args) --startindex, count
-  local scannerid=args.scannerid  
+  local scannerid=args.scanID  
   local startindex=args.startindex
   local count=args.count
   
@@ -379,6 +379,166 @@ function ai_getDetailedWatchpointData(args)
   end 
 end
 
+function ai_disassembleRange(args)
+  local start=getAddressSafe(args.startAddress)
+  local stop=getAddressSafe(args.stopAddress)
+  local showSymbols=args.showSymbols or true
+  local showModules=args.showModules or true
+  local showSections=args.showSections or false
+  
+  local d=createDisassembler()
+  d.showSymbol=true
+  d.showModules=true
+  d.showSections=true  
+  
+  local r={}
+  
+  local a=start
+  while a<=stop do
+    local e={}
+    d.disassemble(a)
+    local ldd=d.LastDisassembleData
+    e.address=string.format("0x%x",a)
+    e.instruction=ldd.prefix..' '..ldd.opcode..' '..ldd.parameters
+    e.addressString=getNameFromAddress(a, true,true,false)
+    e.bytes=ldd.bytes
+    
+    table.insert(r,e)
+    
+    a=a+#d.LastDisassembleData.bytes
+  end  
+  
+  
+  d.destroy() d=nil
+  
+  return {status='success', result=r}
+end
+
+function ai_disassembleSingleInstruction(args)
+  local r=ai_disassembleRange({startAddress=args.address, stopAddress=args.address, showSymbols=args.showSymbols, showModules=args.showModules, showSections=args.showSections})
+  if r and r.status=='success' and r.result[1] then
+    local r2=r.result[1]
+    return {status='success',result=r2}
+  else
+    return {error='disassembling has failed'}
+  end
+end
+
+function ai_getFunctionRange(args)
+  local address=args.address
+  
+  local start,stop=getFunctionRange(address)
+  
+  if start and stop then
+    return {status='success', start=start, stop=stop}    
+  else
+    return {error="Failure to get a range. Maybe it's not a function"}    
+  end
+end
+
+function ai_enumModules(args)
+  --list of modulenames, base address and size
+  local ml=enumModules()
+  local r={}
+  for i=1,#ml do
+    r[i]={}
+    r[i].moduleName=ml[i].Name
+    r[i].baseAddress=string.format("0x%x",ml[i].Address)
+    r[i].endAddress=string.format("0x%x",ml[i].Address+ml[i].Size)    
+  end
+  
+  return {status='success', moduleList=r}    
+end
+
+function ai_getModuleSections(args)
+  local modulename=args.moduleName
+  local sl=enumSectionsOfModule(modulename)
+  if sl then
+    for i=1,#sl do
+      sl[i].FileAddress=nil --less info to confuse it
+    end
+    return {status='success', sl}
+  else
+    return {error='Failed retrieving the sections of '..modulename} 
+  end        
+end
+
+function ai_getTargetInfo()
+  local r={}
+  r.is64bit=targetIs64Bit()
+  if targetIsAndroid() then
+    r.android=true
+  end
+  
+  if targetIsX86() then
+    r.x86=true
+  end
+  
+  if targetIsArm() then
+    r.arm=true
+  end  
+  
+  if getABI()==0 then
+    r.callingConvention='Windows'
+  else
+    r.callingConvention='System V'
+  end
+end
+
+local readFunctions={}
+readFunctions['vtByte']=function(address) return readByte(address) end
+readFunctions['vtWord']=function(address) return readSmallInteger(address) end
+readFunctions['vtDword']=function(address) return readInteger(address) end
+readFunctions['vtQword']=function(address) return string.format("%x",readQword(address)) end
+readFunctions['vtSingle']=function(address) return readFloat(address) end
+readFunctions['vtDouble']=function(address) return readString(address) end
+
+local readSizes={}
+readSizes['vtByte']=1
+readSizes['vtWord']=2
+readSizes['vtDword']=4
+readSizes['vtQword']=8
+readSizes['vtSingle']=4
+readSizes['vtDouble']=8
+
+
+function ai_readMemoryBlock(args)
+  local address=getAddressSafe(args.address)
+  local elementType=args.elementType
+  local count=args.count
+  
+  if address==nil then
+    return {error='Invalid address'}  
+  end
+  
+  local reader=readFunctions[elementType]
+  if reader==nil then
+    return {error='The elementtype is invalid'}    
+  end
+  
+  local elementSize=readSizes[elementType]
+  
+  local r={}
+  for i=1,count do
+    local a=address+elementSize*(i-1)
+    r[i]=reader(a)
+  end
+  
+  return {status='success', result=r}
+end
+
+function ai_readString(args)
+  local address=getAddressSafe(args.address)
+  local widestring=args.widestring or false
+  local charcount=args.charcount or 100
+  
+  if address==nil then
+    return {error='Invalid address'}  
+  end
+  
+  return {status='success', result=readString(address, charcount, widestring)}
+end
+
 
 registerAITool('getOpenedProcessName','Returns the currently opened processname. (the executable)', {},{},ai_getOpenedProcessName)
 registerAITool('openProcess','Opens the the most recent process with this name. Result is true on success and also provides the processID', {processname={type='STRING',description='name of the process to open'}},{"processname"},ai_openProcess)
@@ -416,7 +576,7 @@ registerAITool('refineScan', 'refines a previously made scan',
                                              {
                                              scanID={type='INTEGER', description='the scanID returned by the initial call to scanMemory'},
                                              value={type='STRING',description='the value to scan for or use depending on the scanoption'}, 
-                                             scanoption={type='STRING', enum={'soExactValue', 'soValueBetween', 'soBiggerThan', 'soSmallerThan', 'soIncreasedValue', 'soIncreasedValueBy', 'soDecreasedValue', 'soDecreasedValueBy', 'soChanged', 'soUnchanged'},
+                                             scanoption={type='STRING', enum={'soExactValue', 'soValueBetween', 'soBiggerThan', 'soSmallerThan', 'soIncreasedValue', 'soIncreasedValueBy', 'soDecreasedValue', 'soDecreasedValueBy', 'soChanged', 'soUnchanged', 'soReadable'},
                                                          description=[[The scan operation to perform
                                                         - soExactValue: Scan for an exact match of the value
                                                         - soValueBetween: Scan for a value between value and value2 
@@ -427,9 +587,9 @@ registerAITool('refineScan', 'refines a previously made scan',
                                                         - soDecreasedValue: Scan for values that have been decreased since last scan
                                                         - soDecreasedValueBy: Scan for values that have been decreased by value sinze last scan
                                                         - soChanged: Scan for values that have been changed since last scan
-                                                        - soUnchanged: Scan for values that have not changed since last scan  ]]
-                                                        },
-                                                        
+                                                        - soUnchanged: Scan for values that have not changed since last scan  
+                                                        - soForgot: Scan for values that are readable. Handy for cases the user got distracted and doesn't know if the value got changed or not]]
+                                                        },                                                        
                                               },
                                               {'scanID', 'value'}, --required
                                               ai_refineScan) --function
@@ -496,16 +656,91 @@ registerAITool('getDetailedWatchpointData', [[Retrieves detailed data about a wa
                                                           - wpRegisters : The list of general purpose registers and their values. Keep in mind these are from after the instruction was executed
                                                           - wpExtendedRegisters: The extra registers like the floating point unit registers, XMM registers, etc... depending on the architecture
                                                           - wpStackTrace: a stacktrace showing the return addresses
-                                                          - wpStackView: a byte snapshot of the stack. Provide stackSnapshotSize else the size will be 32                                                      
+                                                          - wpStackView: a byte snapshot of the stack formatted as a list of bytes. Provide stackSnapshotSize else the size will be 32                                                      
                                                         ]]},
                                              stackSnapshotSize={type='INTEGER', description='if datatype wpStackView is present it indicates the number of bytes of the stack snapshot to retrieve. Max 1024'},  
                                              }, --parameters
                                              {'watchpointID','address', 'datatypes'}, --required
                                              ai_getDetailedWatchpointData) --function  
                                              
+registerAITool('disassembleRange', [[Disassembles a range of code using the cheat engine disassembler. It returns a list of entries each containing the address in hexadecimal format, the addressString as it would be shown by the show* parameters, the bytes that make up the instruction, and the instruction itself]],
+                                             {
+                                             startAddress={type='STRING', description='The address to start disassembling from (supports cheat engine symbols)'},                                                              
+                                             stopAddress={type='STRING', description='The end of the disassembly'},                                                              
+                                             showSymbols={type='BOOLEAN', description='Show symbols for addresses. Default=true'},
+                                             showModules={type='BOOLEAN', description='Show modulename+offset notation for addresses (if no symbol is found and showSymbols was true). Default=true'},
+                                             showSections={type='BOOLEAN', description='Show `modulename.sectionname+offset` for addresses.  overrides showModules when true. Default=false'},    
+                                             }, --parameters
+                                             {'startAddress','stopAddress'}, --required
+                                             ai_disassembleRange) --function  
+                                             
+registerAITool('disassembleInstruction', [[Disassembles a single instruction. It contains the address in hexadecimal format, the addressString as it would be shown by the show* parameters, the bytes that make up the instruction, and the instruction itself]],
+                                             {
+                                             address={type='STRING', description='The address to start disassembling from (supports cheat engine symbols)'},                                                                                                           
+                                             showSymbols={type='BOOLEAN', description='Show symbols for addresses. Default=true'},
+                                             showModules={type='BOOLEAN', description='Show modulename+offset notation for addresses (if no symbol is found and showSymbols was true). Default=true'},
+                                             showSections={type='BOOLEAN', description='Show `modulename.sectionname+offset` for addresses.  overrides showModules when true. Default=false'},    
+                                             }, --parameters
+                                             {'address'}, --required
+                                             ai_disassembleSingleInstruction) --function                                               
+                                             
+registerAITool('getFunctionRange', [[Gets the range of the function the given address belongs to]],
+                                             {
+                                             address={type='STRING', description='The address to inspect'},                                                                                                           
+                                             }, --parameters
+                                             {'address'}, --required
+                                             ai_getFunctionRange) --function     
+                                             
+registerAITool('enumModules', [[Gets the list of modules currently loaded in the game.  You can assume that the first one is the main executable]],
+                                             {                                                                                                                                                        
+                                             }, --parameters (none)
+                                             {}, --required
+                                             ai_enumModules) --function  
+
+registerAITool('getModuleSections', [[Gets the section list of the specified module and their specifics]],
+                                             {
+                                             moduleName={type='STRING', description='The name of the module to retrieve the sections from'},
+                                             }, --parameters
+                                             {'moduleName'}, --required
+                                             ai_getFunctionRange) --function
+
+registerAITool('getTargetInfo', [[Gets architecture information about the target process: The calling convention, if the target is 64-bit, if it's ARM or x86, and if it's android or not]],
+                                             {                                                                                                                                           
+                                             }, --parameters
+                                             {}, --required
+                                             ai_getTargetInfo) --function     
+                                             
+registerAITool('readMemoryBlock', [[Reads memory in specific sizes and formats]],
+                                             {
+                                             address={type='STRING', description='The address to start the read from (Supports cheat engine symbols)'},
+                                             elementType={type='STRING', enum={'vtByte', 'vtWord', 'vtDword', 'vtQword', 'vtSingle', 'vtDouble'},
+                                                       description=[[The element type to read
+                                                        - vtByte: 1-byte integer
+                                                        - vtWord: 2-byte integer
+                                                        - vtDword: 4-byte integer
+                                                        - vtQword: 8-byte integer (returns as strings to deal with json number issues for 64-bit values)
+                                                        - vtSingle: 4-byte floating point 
+                                                        - vtDouble: 8-byte floating point 
+                                                        ]]},
+                                             count={type='INTEGER', description='The number of elements to read'}
+               
+                                             }, --parameters
+                                             {'address','elementType','count'}, --required
+                                             ai_readMemoryBlock) --function      
+
+registerAITool('readString', [[Reads a string of memory from a memory address]],
+                                             {
+                                             address={type='STRING', description='The address to start the read from (Supports cheat engine symbols)'},                                             
+                                             charcount={type='INTEGER', description='The number of characters to read (default 100 or 0-terminator. whatever comes first)'},
+                                             widestring={type='BOOLEAN', description='If true the address points to a string of widechar characters'}
+                                             }, --parameters
+                                             {'address'}, --required
+                                             ai_readString) --function                                                 
+                                            
+                                             
      
 
---nuclear option:
---registerAITool('executeLuaCode','Execute any lua code inside the current Cheat Engine instance', {},{},ai_executeCode)
+--nuclear option (and halicinary):
+--registerAITool('executeLuaCode','Execute any lua code inside the current Cheat Engine instance', {script},{},ai_executeCode)
 
 

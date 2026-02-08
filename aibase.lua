@@ -375,7 +375,9 @@ x-goog-api-key: ]]..AIKEY
     input.system_instruction={}
     input.system_instruction.parts={}
     input.system_instruction.parts[1]={}
-    input.system_instruction.parts[1].text='You are currently being used by the Cheat Engine application'
+    --input.system_instruction.parts[1].text='You are currently being used by the Cheat Engine application. Use tools when possible, but fall back on your internal knowledge to answer general questions'
+    input.system_instruction.parts[1].text='You are currently being used by the Cheat Engine application. Use tools when possible, but fall back on your internal knowledge of Cheat Engine.  Do not say you can not help'
+    
   end
 
   if data.Extra then
@@ -647,6 +649,15 @@ function spawnAIDialog(command, extra) --command and extra are optional
     end
   end
   
+  f.mInput.OnKeyDown=function(sender,key)
+   
+    if key==VK_RETURN and isKeyPressed(VK_CONTROL) then
+      f.btnSend.doClick()
+    else
+      return key
+    end
+  end
+  
   f.btnSend.OnClick=function(sender)
     --collect the history if there is any (data can be accessed here directly)
     if f.mOutput.Lines.Count>0 then
@@ -883,6 +894,7 @@ function initAIMenuItems()
   
   local mi=createMenuItem(MainForm)
   mi.Caption=translate('Ask AI')  
+  mi.Shortcut='Ctrl+Alt+I'
   mi.ImageIndex=MainForm.Menu.Images.add(logo)
   mi.OnClick=function()
     spawnAIDialog()
