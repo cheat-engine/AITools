@@ -135,25 +135,30 @@ function ai_startWatchpoint(args)
   local watchsize=args.watchsize or 1
   local watchtype=_G[args.watchtype] or bptAccess  
   
+  --autoUpdate ? send a hidden conversation update every few seconds if there's a change ?
+  
+  print("ai_startWatchpoint. args=",args)
+  
   if address then
     local a=getAddressSafe(address)
     if a then
+      print("a=",a)
+      printf("a=%x",a)
+    
       local id=#aiobjects+1
       local data={}
       data.type='watchpoint'      
       data.results={}      
       data.resultsLookupActual={}
-      aiobjects[id]=data
-
-      
+      aiobjects[id]=data      
 
       local r,r2=debug_setBreakpoint(a,watchsize,watchtype,function()
         --add to data.result
-        print("bp triggered")
+       -- print("bp triggered")
         local instructionPointer
                
         local r={}        
-        r.context=debug_getContextTable()
+        r.context=debug_getCurrentContextTable()
         
         if r.context then
           if targetIsX86() then
@@ -195,7 +200,7 @@ function ai_startWatchpoint(args)
             end
             data.resultsLookupActual[r.actualInstructionPointer]=r --for quick lookup
             
-            r.contextExt=debug_getContextTable(true)
+            r.contextExt=debug_getCurrentContextTable(true)
             
             --delete from contextExt the nonExt parts
             for name,val in pairs(r.context) do
@@ -204,8 +209,7 @@ function ai_startWatchpoint(args)
             
             r.stack=readBytes(r.StackPointer,1024, true)
             
-            r.stacktrace=stacktrace(r.StackPointer,1024)
-            
+            r.stacktrace=debug_stacktrace(r.StackPointer,1024)
             
             r.opcode=d.LastDisassembleData.opcode ..' '..d.LastDisassembleData.parameters
             r.opcodesize=#d.LastDisassembleData.bytes
@@ -215,17 +219,22 @@ function ai_startWatchpoint(args)
       end)
       
       if r then
+        print("ai_startWatchpoint success")
         data.breakpointid=r2
         return {status='success', watchpointID=id}        
       else
+        print("ai_startWatchpoint failure 1")      
+        print("r2=",r2)
         aiobjects[id]=nil --nevermind
         if r2==nil then r2='failure for an unknown reason' end
         return {error=r2}      
       end
     else
+      print("ai_startWatchpoint failure 2")   
       return {error='Failure interpreting what the address `'..address..'` meant'}
     end
   else
+    print("ai_startWatchpoint failure 3")   
     return {error='address was not provided or unparsable'}
   end
 end
@@ -290,7 +299,7 @@ function ai_queryWatchPointStatus(args)
     
     for instructionPointer,result in pairs(data.results) do
       local e={}
-      e.InstructionAddress=format("%x",result.actualInstructionPointer) --needs to be a string
+      e.InstructionAddress=string.format("0x%x",result.actualInstructionPointer) --needs to be a string
       e.Opcode=result.opcode
       e.Count=result.count
       
@@ -307,7 +316,15 @@ end
 function ai_getDetailedWatchpointData(args)
   local watchpointID=args.watchpointID
   local address=getAddressSafe(args.address)
-  local datatypes=args.datatypes
+  local indexeddatatypes=args.datatypes
+
+  local datatypes={}
+  for i=1,#indexeddatatypes do
+    datatypes[indexeddatatypes[i]]=true
+  end
+  
+  print("ai_getDetailedWatchpointData. args=", args)
+  
   if address==nil then
     return {error='address was not provided or unparsable'}
   end
@@ -333,23 +350,23 @@ function ai_getDetailedWatchpointData(args)
       r.functionRange=e.functionRange
     end    
     
-    if datatype.wpRegisters then
+    if datatypes.wpRegisters then
       r.registers=e.context
     end
     
-    if datatype.wpExtendedRegisters then
+    if datatypes.wpExtendedRegisters then
       r.extendedRegisters=e.contextExt
     end    
     
-    if datatype.wpStackTrace then
+    if datatypes.wpStackTrace then
       r.stacktrace=e.stacktrace
     end
     
-    if datatype.wpStackView then      
+    if datatypes.wpStackView then      
       local s=''
       local stackSnapshotSize=args.stackSnapshotSize or 32      
       
-      local i=1,stackSnapshotSize do
+      for i=1,stackSnapshotSize do
         s=s..format('%.2x ',e.stack[i])
       end
       
@@ -429,7 +446,9 @@ registerAITool('getResultsAndValues', [[Retrieves a view of the results of the g
                                              {'scanID', 'index', 'count'}, --required
                                              ai_getResultsAndValues) --function                  
 
-registerAITool('startWatchpoint', [[Sets a watchpoint at a given address so that each time it is hit collects data and then continues the target. The function returns a watchpointID which you can use with the queryWatchPointStatus function and later with the stopWatchpoint function]],
+registerAITool('startWatchpoint', [[Sets a watchpoint at a given address so that each time it is hit collects data and then continues the target. 
+                                    On success the function returns a watchpointID which you can use with the queryWatchPointStatus function and later with the stopWatchpoint function
+                                    Tell the user to do things in the game to trigger the watchpoint and tell you when done ]],
                                              {
                                              address={type='STRING', description='The address to watch for memory accesses. Formatted as hexadecimal or a symbol recognized by Cheat Engine'},                 
                                              watchsize={type='INTEGER', description='The size in bytes for the watchpoint. default 1'},
@@ -468,7 +487,10 @@ registerAITool('getDetailedWatchpointData', [[Retrieves detailed data about a wa
                                              watchpointID={type='INTEGER', description='The watchpointID returned by startWatchpoint'},                                                              
                                              address={type='STRING', description='The instruction address returned by queryWatchPointStatus'},                                                                                                           
                                              datatypes={type="ARRAY", 
-                                                        items={'wpFunctionRange', 'wpRegisters','wpExtendedRegisters', 'wpStackTrace', 'wpStackView32', 'wpStackView128', 'wpStackView1024'},
+                                                        items={
+                                                          type='STRING',
+                                                          enum={'wpFunctionRange', 'wpRegisters','wpExtendedRegisters', 'wpStackTrace', 'wpStackView'}
+                                                          },
                                                         description=[[A list of optional data to retrieve
                                                           - wpFunctionRange : The start and stop address of the function the instruction is in
                                                           - wpRegisters : The list of general purpose registers and their values. Keep in mind these are from after the instruction was executed

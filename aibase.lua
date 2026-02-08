@@ -356,20 +356,20 @@ x-goog-api-key: ]]..AIKEY
   data.modelname=modelname
   
   
-  local input
-  if data.history then
-    input=data.history
-  else
-    input={}
-    input.contents={}
+  if data.history==nil then
+    data.history={}
+    data.history.contents={}
   end
-
+  local input=data.history
+ 
   local newcontent={}
   newcontent.role='user'  
   newcontent.parts={}  
   newcontent.parts[1]={}
   newcontent.parts[1].text=message  
-  table.insert(input.contents,newcontent)
+  table.insert(input.contents,newcontent) 
+  
+ 
  
   if AIAccess==2 then    
     input.system_instruction={}
@@ -385,8 +385,7 @@ x-goog-api-key: ]]..AIKEY
       input.system_instruction.parts[1]={}
       input.system_instruction.parts[1].text=data.Extra
     else
-      input.contents.parts[2]={}
-      input.contents.parts[2].text=data.Extra      
+      newcontent.parts[2].text=data.Extra      
     end
   end
 
@@ -413,15 +412,10 @@ x-goog-api-key: ]]..AIKEY
     input.tools=nil
   end
   
-
-  data.history=input
-
   
   local inputtext=jsonparser.encode(input)
   local result
   
-
-
   local thread=createThread(function(t)
     data.thread=t
     t.Name='GenerateContent AI command'
@@ -545,6 +539,7 @@ x-goog-api-key: ]]..AIKEY
           end
         end
         
+   
         if response then
           --there's a response to give
           table.insert(input.contents, response)
@@ -658,6 +653,7 @@ function spawnAIDialog(command, extra) --command and extra are optional
       f.mOutput.Lines.add('')
     end 
 
+    local message=f.mInput.Lines.Text
     f.mOutput.Lines.add('> '..f.mInput.Lines.Text)
     f.mInput.Lines.clear()
 
@@ -713,7 +709,7 @@ function spawnAIDialog(command, extra) --command and extra are optional
         f.btnSend.cursor=crDefault
       end
     end
-    aiRequest(data, f.mInput.Lines.Text)
+    aiRequest(data, message)
   end
   
   local AIAccessChange=function(sender)
