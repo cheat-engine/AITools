@@ -114,7 +114,7 @@ retrieveModelList=function()
 
       local i=getInternet()
       i.Header='x-goog-api-key: '..AIKEY
-      local jsonModelList=i.getURL('https://generativelanguage.googleapis.com/v1beta/models')
+      jsonModelList=i.getURL('https://generativelanguage.googleapis.com/v1beta/models')
       i.destroy()
 
       local jml=jsonparser.decode(jsonModelList)
@@ -260,7 +260,7 @@ x-goog-api-key: ]]..AIKEY
 
   local prevdata=nil
   local r={}
-  local allprevdata={}
+  --local allprevdata={}
 
 
   data.Error=nil
@@ -279,7 +279,7 @@ x-goog-api-key: ]]..AIKEY
         prevdata=prevdata..received
       end
 
-      table.insert(allprevdata, prevdata)
+      
 
       local currentblock
       repeat
@@ -376,7 +376,7 @@ x-goog-api-key: ]]..AIKEY
     input.system_instruction.parts={}
     input.system_instruction.parts[1]={}
     --input.system_instruction.parts[1].text='You are currently being used by the Cheat Engine application. Use tools when possible, but fall back on your internal knowledge to answer general questions'
-    input.system_instruction.parts[1].text='You are currently being used by the Cheat Engine application. Use tools when possible, but fall back on your internal knowledge of Cheat Engine.  Do not say you can not help'
+    input.system_instruction.parts[1].text='You are a professional reverse engineer using Cheat Engine. Use tools when possible, but fall back on your internal knowledge of Cheat Engine.  Do not say you can not help'
     
   end
 
@@ -437,12 +437,19 @@ x-goog-api-key: ]]..AIKEY
     data.usedurl=url
     data.lastinputtext=inputtext
     
+    if data.allfullresponses==nil then
+      data.allfullresponses={}
+    end
+    
 
     result=data.Internet.postURL(url, inputtext)
     local response
     local textresult=''
     
     while result do
+      table.insert(data.allfullresponses,result)
+      
+      
       response=nil
       
       data.InternetDone=true
@@ -476,8 +483,9 @@ x-goog-api-key: ]]..AIKEY
                         
                         for j=1,#parts do
                           newcontent.parts[j]={}
-                          newcontent.parts[j].text=parts[j].text
-                          newcontent.parts[j].functionCall=parts[j].functionCall
+                          newcontent.parts[j]=parts[j]
+                          --newcontent.parts[j].text=parts[j].text
+                          --newcontent.parts[j].functionCall=parts[j].functionCall
                           
                           if parts[j].text then
                             textresult=textresult..parts[j].text
@@ -495,6 +503,8 @@ x-goog-api-key: ]]..AIKEY
                               response={} --add it if needed
                               response.role='user'
                               response.parts={}
+                              
+                              --data.resultBeforeResponse=data.UnparsedResult
                             end
                             
                             local tool=aitools[parts[j].functionCall.name]

@@ -2,6 +2,8 @@
 --MIT License 
 --https://github.com/cheat-engine/AITools
 
+--todo: add a voice to text and input the output to the AI, or if possible, enter voice as input directly ?
+
 local function ai_getOpenedProcessName()
   if process then return {processname=process} else return {processname='no process opened yet'} end
 end
@@ -26,13 +28,17 @@ local function ai_scanMemory(args)
   local value=args.value
   local value2=args.value2
   local scanoption=args.scanoption
-  local alignment=args.alignment
+  local alignment=args.alignment 
   local vartype=vartype
   local ms=createMemScan()
  
   ms.ScanValue=value
   if vartype then
     ms.VarType=vartype
+  end
+  
+  if scanoption then
+    ms.ScanOoption=scanoption
   end
    
   ms.scan()
@@ -64,8 +70,8 @@ end
 
 local function ai_refineScan(args)
   local scannerid=args.scanID
-  print("ai_refineScan")
-  printf("scannerid=%d", scannerid)
+ -- print("ai_refineScan")
+  --printf("scannerid=%d", scannerid)
   
   local ms=aiobjects[scannerid]
   if ms==nil or ms.ClassName~='TMemScan' then
@@ -289,6 +295,9 @@ function ai_queryWatchPointStatus(args)
   if watchpointID then
     local r={}
     local data=aiobjects[watchpointID]
+    if data==nil then
+      return {error='watchpointID is invalid. Did you actually call startWatchpoint?'}
+    end
     if data.type~='watchpoint' then
       return {error='watchpointID corrupted'}
     end
@@ -425,7 +434,7 @@ function ai_disassembleSingleInstruction(args)
 end
 
 function ai_getFunctionRange(args)
-  local address=args.address
+  local address=getAddressSafe(args.address)
   
   local start,stop=getFunctionRange(address)
   
@@ -450,6 +459,18 @@ function ai_enumModules(args)
   return {status='success', moduleList=r}    
 end
 
+function ai_getModuleFromAddress(args)
+  local address=getAddressSafe(args.address)
+  local ml=enumModules()
+  for i=1,#ml do
+    if (address>ml[i].Address) and (address<ml[i].Address+ml[i].Size) then
+      return {status='success', moduleinfo={moduleName=ml[i].Name, baseAddress=string.format("0x%x",ml[i].Address), endAddress=string.format("0x%x",ml[i].Address+ml[i].Size) }}   
+    end
+  end
+  
+  return {error="The given address does not belong to a module"}
+end
+
 function ai_getModuleSections(args)
   local modulename=args.moduleName
   local sl=enumSectionsOfModule(modulename)
@@ -463,7 +484,7 @@ function ai_getModuleSections(args)
   end        
 end
 
-function ai_getTargetInfo()
+function ai_getTargetedProcessInfo()
   local r={}
   r.is64bit=targetIs64Bit()
   if targetIsAndroid() then
@@ -539,6 +560,20 @@ function ai_readString(args)
   return {status='success', result=readString(address, charcount, widestring)}
 end
 
+function ai_showLuaScript(args)  
+  synchronize(function() 
+    local f=createLuaEngine()
+    f.mScript.Lines.Text=args.LuaScript or '' 
+    f.show()
+  end)  
+end
+
+function ai_showAutoAssemblerScript(args)  
+  synchronize(function() 
+    local f=createAutoAssemblerForm()
+    f.Assemblescreen.Lines.Text=args.AutoAssemblerScript or ''     
+  end)  
+end
 
 registerAITool('getOpenedProcessName','Returns the currently opened processname. (the executable)', {},{},ai_getOpenedProcessName)
 registerAITool('openProcess','Opens the the most recent process with this name. Result is true on success and also provides the processID', {processname={type='STRING',description='name of the process to open'}},{"processname"},ai_openProcess)
@@ -606,9 +641,9 @@ registerAITool('getResultsAndValues', [[Retrieves a view of the results of the g
                                              {'scanID', 'index', 'count'}, --required
                                              ai_getResultsAndValues) --function                  
 
-registerAITool('startWatchpoint', [[Sets a watchpoint at a given address so that each time it is hit collects data and then continues the target. 
-                                    On success the function returns a watchpointID which you can use with the queryWatchPointStatus function and later with the stopWatchpoint function
-                                    Tell the user to do things in the game to trigger the watchpoint and tell you when done ]],
+registerAITool('startWatchpoint', [[Sets a watchpoint at a given address so that each time it is hit it collects data and then continues the target. 
+                                    When called the function returns a watchpointID which you can use with the queryWatchPointStatus function and later with the stopWatchpoint function
+                                    After having obtained a valid watchpointID (>0) tell the user to do things in the game to trigger the watchpoint and tell you when done ]],
                                              {
                                              address={type='STRING', description='The address to watch for memory accesses. Formatted as hexadecimal or a symbol recognized by Cheat Engine'},                 
                                              watchsize={type='INTEGER', description='The size in bytes for the watchpoint. default 1'},
@@ -691,11 +726,18 @@ registerAITool('getFunctionRange', [[Gets the range of the function the given ad
                                              {'address'}, --required
                                              ai_getFunctionRange) --function     
                                              
-registerAITool('enumModules', [[Gets the list of modules currently loaded in the game.  You can assume that the first one is the main executable]],
+registerAITool('enumModules', [[Gets the list of modules currently loaded in the game.  You can assume that the first one is the main executable.  Each entry contains the name, baseAddress and endAddress of each loaded module]],
                                              {                                                                                                                                                        
                                              }, --parameters (none)
                                              {}, --required
                                              ai_enumModules) --function  
+                                             
+registerAITool('getModuleFromAddress', [[If the address belongs to a module, this returns the module name, it's baseAddress and endAddress ]],
+                                             {  
+                                                address={type='STRING', description='The address to inspect'},                                               
+                                             }, 
+                                             {address}, --required
+                                             ai_getModuleFromAddress) --function                                               
 
 registerAITool('getModuleSections', [[Gets the section list of the specified module and their specifics]],
                                              {
@@ -704,11 +746,11 @@ registerAITool('getModuleSections', [[Gets the section list of the specified mod
                                              {'moduleName'}, --required
                                              ai_getFunctionRange) --function
 
-registerAITool('getTargetInfo', [[Gets architecture information about the target process: The calling convention, if the target is 64-bit, if it's ARM or x86, and if it's android or not]],
+registerAITool('getTargetedProcessInfo', [[Gets architecture information about the target process: The calling convention, if the target is 64-bit, if it's ARM or x86, and if it's android or not]],
                                              {                                                                                                                                           
                                              }, --parameters
                                              {}, --required
-                                             ai_getTargetInfo) --function     
+                                             ai_getTargetedProcessInfo) --function     
                                              
 registerAITool('readMemoryBlock', [[Reads memory in specific sizes and formats]],
                                              {
@@ -735,8 +777,18 @@ registerAITool('readString', [[Reads a string of memory from a memory address]],
                                              widestring={type='BOOLEAN', description='If true the address points to a string of widechar characters'}
                                              }, --parameters
                                              {'address'}, --required
-                                             ai_readString) --function                                                 
-                                            
+                                             ai_readString) --function     
+
+               
+
+               
+registerAITool('showLuaScript',[[Opens a lua engine window and inserts the provided lua script in the editor field]],{LuaScript={type='STRING', description='The script to show in the editor section)'}},{'LuaScript'},ai_showLuaScript)                                         
+registerAITool('showAutoAssemblerScript',[[Opens an autoAssembler windows and inserts the provides auto assembler script in the editor field]],{AutoAssemblerScript={type='STRING', description='The script to show in the editor section)'}},{'AutoAssemblerScript'},ai_showAutoAssemblerScript)                                         
+
+registerAITool('openMemoryView',[[Opens the memory view window]],{},{},function() synchronize(function() getMemoryViewForm()().show() end) end)                                         
+
+
+     
                                              
      
 
