@@ -2,7 +2,7 @@
 --MIT License 
 --https://github.com/cheat-engine/AITools
 
---todo: add a voice to text and input the output to the AI, or if possible, enter voice as input directly ?
+
 
 local function ai_getOpenedProcessName()
   if process then return {processname=process} else return {processname='no process opened yet'} end
@@ -565,14 +565,34 @@ function ai_showLuaScript(args)
     local f=createLuaEngine()
     f.mScript.Lines.Text=args.LuaScript or '' 
     f.show()
-  end)  
+  end)
+  return {status='success'}  
 end
 
 function ai_showAutoAssemblerScript(args)  
   synchronize(function() 
     local f=createAutoAssemblerForm()
     f.Assemblescreen.Lines.Text=args.AutoAssemblerScript or ''     
+    
   end)  
+  
+  return {status='success'}
+end
+
+function ai_getVersionStrings(args)
+  s,s2=getFileVersion(enumModules()[1].PathToFile)
+  return {s2}
+end
+
+function ai_showMemoryView(args)
+  synchronize(function() 
+    local disassemblerAddress=args.disassemblerAddress
+    local hexviewAddress=args.hexviewAddress
+    
+    getMemoryViewForm()().show() 
+  end)
+  
+  return {status='success'}
 end
 
 registerAITool('getOpenedProcessName','Returns the currently opened processname. (the executable)', {},{},ai_getOpenedProcessName)
@@ -783,9 +803,14 @@ registerAITool('readString', [[Reads a string of memory from a memory address]],
 
                
 registerAITool('showLuaScript',[[Opens a lua engine window and inserts the provided lua script in the editor field]],{LuaScript={type='STRING', description='The script to show in the editor section)'}},{'LuaScript'},ai_showLuaScript)                                         
+
 registerAITool('showAutoAssemblerScript',[[Opens an autoAssembler windows and inserts the provides auto assembler script in the editor field]],{AutoAssemblerScript={type='STRING', description='The script to show in the editor section)'}},{'AutoAssemblerScript'},ai_showAutoAssemblerScript)                                         
 
-registerAITool('openMemoryView',[[Opens the memory view window]],{},{},function() synchronize(function() getMemoryViewForm()().show() end) end)                                         
+registerAITool('openMemoryView',[[Opens the memory view window]],{disassemblerAddress={type='STRING', description='The address for the disassembler'},
+                                                                  hexviewAddress={type='STRING', description='The hexadecimal address for the disassembler'} 
+                                                                 },{},ai_showMemoryView)    
+                                                                 
+registerAITool('getVersionStrings',[[Retrieves the version resource strings of the target process. This includes, ProductVersion, FileDescription, InternalName, etc...]],{},{},ai_getVersionStrings)                                         
 
 
      

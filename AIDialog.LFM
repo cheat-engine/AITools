@@ -1,0 +1,272 @@
+object frmAIDialog: TCEForm
+  Left = 698
+  Height = 478
+  Top = 294
+  Width = 1232
+  ActiveControl = mInput
+  Caption = 'AI Dialog'
+  ClientHeight = 478
+  ClientWidth = 1232
+  DesignTimePPI = 144
+  DoubleBuffered = True
+  ParentDoubleBuffered = False
+  LCLVersion = '4.2.0.0'
+  OnCloseQuery = frmAIDialog_FormCloseQuery
+  object gbAPIKey: TCEGroupBox
+    AnchorSideLeft.Control = Owner
+    AnchorSideTop.Control = Owner
+    AnchorSideRight.Control = Owner
+    AnchorSideRight.Side = asrBottom
+    Left = 0
+    Height = 93
+    Top = 0
+    Width = 1232
+    Anchors = [akTop, akLeft, akRight]
+    AutoSize = True
+    Caption = 'Your AI Access'
+    ClientHeight = 63
+    ClientWidth = 1228
+    ParentBackground = False
+    ParentFont = False
+    TabOrder = 2
+    object edtAPIKEY: TCEEdit
+      AnchorSideLeft.Control = gbAPIKey
+      AnchorSideTop.Control = rbAIAccessPublic
+      AnchorSideTop.Side = asrBottom
+      AnchorSideRight.Control = btnObtainKey
+      Left = 2
+      Height = 33
+      Top = 29
+      Width = 1109
+      Anchors = [akTop, akLeft, akRight]
+      BorderSpacing.Left = 2
+      BorderSpacing.Right = 4
+      EchoMode = emPassword
+      ParentFont = False
+      PasswordChar = '*'
+      TabOrder = 3
+      TextHint = '<Enter API key here>'
+      OnChange = frmAIDialog_edtAPIKEYChange
+      SelStart = 0
+      SelLength = 0
+      TextHintFontColor = clDefault
+      TextHintFontStyle = fsBold
+    end
+    object btnObtainKey: TCEButton
+      AnchorSideTop.Control = edtAPIKEY
+      AnchorSideTop.Side = asrCenter
+      AnchorSideRight.Control = gbAPIKey
+      AnchorSideRight.Side = asrBottom
+      Left = 1115
+      Height = 35
+      Top = 28
+      Width = 113
+      Anchors = [akTop, akRight]
+      AutoSize = True
+      Caption = 'Obtain Key'
+      ParentFont = False
+      TabOrder = 4
+      OnClick = frmAIDialog_btnObtainKeyClick
+    end
+    object rbAIAccessPublic: TRadioButton
+      AnchorSideLeft.Control = gbAPIKey
+      AnchorSideTop.Control = gbAPIKey
+      Left = 0
+      Height = 29
+      Hint = 'The public CE API is just to give you a taste of the AI capabilities on the rare occasion the limit hasn''t been reached.  The limit it shared between ALL public api users. The chances of getting to it before the limit is reached are slim'#13#10#13#10'uses gemini-2.5-flash'
+      Top = 0
+      Width = 283
+      Caption = 'Public CE API (Extremely Limited)'
+      Checked = True
+      Font.Color = clWindowText
+      ParentColor = False
+      ParentFont = False
+      ParentShowHint = False
+      ShowHint = True
+      TabOrder = 0
+      TabStop = True
+    end
+    object rbAIAccessPatreon: TRadioButton
+      AnchorSideLeft.Control = rbAIAccessPublic
+      AnchorSideLeft.Side = asrBottom
+      Left = 291
+      Height = 29
+      Hint = 'The Patreon CE API is similar to the public API, but has a slightly higher daily limit (still shared between all patreon members) You sometimes might even get a chance to use it.'#13#10#13#10'uses gemini-2.5-flash'
+      Top = 0
+      Width = 216
+      BorderSpacing.Left = 8
+      Caption = 'Patreon CE API (Limited)'
+      ParentColor = False
+      ParentShowHint = False
+      ShowHint = True
+      TabOrder = 1
+    end
+    object rbAIAccessPrivate: TRadioButton
+      AnchorSideLeft.Control = rbAIAccessPatreon
+      AnchorSideLeft.Side = asrBottom
+      AnchorSideTop.Control = gbAPIKey
+      Left = 515
+      Height = 29
+      Hint = 'The recommended way to use the AI tools. Even your free access key would give you more access than the public key as you don''t have to share with other users. And if you do need more feel free to change your account to a paid account. '#13#10#13#10'You can pick whichever compatible LLM model you wish'
+      Top = 0
+      Width = 316
+      BorderSpacing.Left = 8
+      Caption = 'Personal Google AI Key (Best option)'
+      ParentColor = False
+      ParentShowHint = False
+      ShowHint = True
+      TabOrder = 2
+    end
+  end
+  object gbModelSelection: TCEGroupBox
+    AnchorSideTop.Control = gbAPIKey
+    AnchorSideTop.Side = asrBottom
+    AnchorSideRight.Control = Owner
+    AnchorSideRight.Side = asrBottom
+    Left = 964
+    Height = 81
+    Top = 93
+    Width = 268
+    Anchors = [akTop, akRight]
+    AutoSize = True
+    BorderSpacing.Bottom = -2
+    Caption = 'Current/Default Model'
+    ClientHeight = 51
+    ClientWidth = 264
+    ParentBackground = False
+    ParentFont = False
+    TabOrder = 3
+    object cbModelSelection: TCEComboBox
+      AnchorSideLeft.Control = gbModelSelection
+      AnchorSideLeft.Side = asrCenter
+      AnchorSideTop.Control = gbModelSelection
+      AnchorSideRight.Control = gbModelSelection
+      AnchorSideRight.Side = asrBottom
+      Left = 4
+      Height = 33
+      Top = 6
+      Width = 256
+      Anchors = [akTop, akRight]
+      BorderSpacing.Left = 4
+      BorderSpacing.Top = 6
+      BorderSpacing.Right = 4
+      BorderSpacing.Bottom = 12
+      ItemHeight = 25
+      ItemIndex = 0
+      Items.Strings = (
+        'gemini-2.5-flash'
+        '<loading>'
+      )
+      ParentFont = False
+      TabOrder = 0
+      Text = 'gemini-2.5-flash'
+    end
+  end
+  object gbOptions: TCEGroupBox
+    AnchorSideLeft.Control = gbModelSelection
+    AnchorSideTop.Control = gbModelSelection
+    AnchorSideTop.Side = asrBottom
+    AnchorSideRight.Control = gbAPIKey
+    AnchorSideRight.Side = asrBottom
+    AnchorSideBottom.Control = Owner
+    AnchorSideBottom.Side = asrBottom
+    Left = 694
+    Height = 414
+    Top = 148
+    Width = 358
+    Anchors = [akTop, akLeft, akRight, akBottom]
+    BorderSpacing.Top = 2
+    Caption = 'Options'
+    ClientHeight = 384
+    ClientWidth = 354
+    ParentBackground = False
+    TabOrder = 4
+    Visible = False
+    object CECheckbox1: TCECheckBox
+      Left = 12
+      Height = 29
+      Top = 20
+      Width = 132
+      Caption = 'CECheckbox1'
+      TabOrder = 0
+    end
+    object CECheckbox2: TCECheckBox
+      Left = 6
+      Height = 29
+      Top = 51
+      Width = 132
+      Caption = 'CECheckbox2'
+      TabOrder = 1
+    end
+  end
+  object btnSend: TCEButton
+    AnchorSideLeft.Control = gbOptions
+    AnchorSideRight.Side = asrBottom
+    AnchorSideBottom.Side = asrBottom
+    Left = 967
+    Height = 35
+    Top = 439
+    Width = 66
+    Anchors = [akLeft, akBottom]
+    AutoSize = True
+    BorderSpacing.Left = 3
+    BorderSpacing.Bottom = 2
+    Caption = 'Send'
+    TabOrder = 1
+    OnClick = frmAIDialog_btnSendClick
+  end
+  object CEPanel1: TCEPanel
+    AnchorSideLeft.Control = Owner
+    AnchorSideTop.Control = gbAPIKey
+    AnchorSideTop.Side = asrBottom
+    AnchorSideRight.Control = gbModelSelection
+    AnchorSideBottom.Control = Owner
+    AnchorSideBottom.Side = asrBottom
+    Left = 0
+    Height = 385
+    Top = 93
+    Width = 964
+    Anchors = [akTop, akLeft, akRight, akBottom]
+    ClientHeight = 385
+    ClientWidth = 964
+    ParentBackground = False
+    TabOrder = 0
+    object mInput: TSynedit
+      AnchorSideTop.Side = asrBottom
+      Left = 3
+      Height = 137
+      Top = 245
+      Width = 958
+      Align = alBottom
+      BorderSpacing.Left = 2
+      BorderSpacing.Right = 2
+      BorderSpacing.Bottom = 2
+      BorderStyle = bsNone
+      ParentFont = True
+      ScrollBars = ssBoth
+      TabOrder = 0
+    end
+    object mOutput: TMarkdownViewer
+      Left = 3
+      Height = 227
+      Top = 3
+      Width = 958
+      Align = alClient
+      BorderSpacing.Left = 2
+      BorderSpacing.Top = 2
+      BorderSpacing.Right = 2
+      BorderStyle = bsNone
+      ParentFont = True
+      TabOrder = 1
+    end
+    object CESplitter1: TCESplitter
+      Cursor = crVSplit
+      Left = 1
+      Height = 15
+      Top = 230
+      Width = 962
+      Align = alBottom
+      ResizeAnchor = akBottom
+    end
+  end
+end

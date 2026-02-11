@@ -2,6 +2,9 @@
 --Initially, this script implements the talking to and handling of a google AI type of LLM
 --Feel free to add support for locally executing LLM's
 
+--todo: add a voice to text and input the output to the AI, or if possible, enter voice as input directly ?
+--      other AI systems besides google ai
+
 
 --MIT License
 --https://github.com/cheat-engine/AITools
@@ -627,7 +630,7 @@ function spawnAIDialog(command, extra) --command and extra are optional
   local animator
   local data={}
 
-  local f=createFormFromFile(basepath..'AIDialog.FRM')
+  local f=createFormFromFile(basepath..'AIDialog.LFM')
   data.self=f
   data.extra=extra
 
