@@ -244,7 +244,10 @@ object frmAIDialog: TCEForm
       BorderStyle = bsNone
       ParentFont = True
       ScrollBars = ssBoth
+      Color = clWindow
       TabOrder = 0
+      Gutter.Visible=false
+      RightEdge=-1
     end
     object mOutput: TMarkdownViewer
       Left = 3
