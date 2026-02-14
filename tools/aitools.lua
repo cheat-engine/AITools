@@ -107,9 +107,9 @@ local function ai_refineScan(args)
   return r    
 end
 
-local function ai_getResultsAndValues(args) --startindex, count
+function ai_getResultsAndValues(args) --startindex, count
   local scannerid=args.scanID  
-  local startindex=args.startindex
+  local index=args.index
   local count=args.count
   
   local ms=aiobjects[scannerid]
@@ -121,7 +121,9 @@ local function ai_getResultsAndValues(args) --startindex, count
   local r={}
   local al=createFoundList(ms)
   al.initialize()
-  for i=startindex,count do
+  local maxindex=math.min(al.count-1,index+count-1)
+  
+  for i=index,maxindex do
     local e={}
     e.index=i
     e.address=al.Address[i]
@@ -133,7 +135,7 @@ local function ai_getResultsAndValues(args) --startindex, count
   al.deinitialize()  
   al.destroy() al=nil
   
-  return r
+  return {status='success', result=r}
 end
 
 function ai_startWatchpoint(args)
@@ -143,14 +145,11 @@ function ai_startWatchpoint(args)
   
   --autoUpdate ? send a hidden conversation update every few seconds if there's a change ?
   
-  print("ai_startWatchpoint. args=",args)
+  --print("ai_startWatchpoint. args=",args)
   
   if address then
     local a=getAddressSafe(address)
     if a then
-      print("a=",a)
-      printf("a=%x",a)
-    
       local id=#aiobjects+1
       local data={}
       data.type='watchpoint'      
@@ -229,8 +228,8 @@ function ai_startWatchpoint(args)
         data.breakpointid=r2
         return {status='success', watchpointID=id}        
       else
-        print("ai_startWatchpoint failure 1")      
-        print("r2=",r2)
+       -- print("ai_startWatchpoint failure 1")      
+       -- print("r2=",r2)
         aiobjects[id]=nil --nevermind
         if r2==nil then r2='failure for an unknown reason' end
         return {error=r2}      
@@ -332,7 +331,7 @@ function ai_getDetailedWatchpointData(args)
     datatypes[indexeddatatypes[i]]=true
   end
   
-  print("ai_getDetailedWatchpointData. args=", args)
+  --print("ai_getDetailedWatchpointData. args=", args)
   
   if address==nil then
     return {error='address was not provided or unparsable'}
@@ -579,6 +578,19 @@ function ai_showAutoAssemblerScript(args)
   return {status='success'}
 end
 
+function ai_syntaxCheckAutoAssemblerScript(args)  
+  local script=args.AutoAssemblerScript
+  local enablesection=arg.EnableSection or true
+  r,r2=autoAssembleCheck(script,enablesection,false)
+  
+  if not r then
+    return {error=r2}  
+  else
+    return {status='successs'}
+  end
+end
+
+
 function ai_getVersionStrings(args)
   s,s2=getFileVersion(enumModules()[1].PathToFile)
   return {s2}
@@ -589,10 +601,15 @@ function ai_showMemoryView(args)
     local disassemblerAddress=args.disassemblerAddress
     local hexviewAddress=args.hexviewAddress
     
-    getMemoryViewForm()().show() 
+    getMemoryViewForm().show() 
   end)
   
   return {status='success'}
+end
+
+function ai_addAddressToAddressList(args)
+  local description=args.description
+  
 end
 
 registerAITool('getOpenedProcessName','Returns the currently opened processname. (the executable)', {},{},ai_getOpenedProcessName)
@@ -806,16 +823,43 @@ registerAITool('showLuaScript',[[Opens a lua engine window and inserts the provi
 
 registerAITool('showAutoAssemblerScript',[[Opens an autoAssembler windows and inserts the provides auto assembler script in the editor field]],{AutoAssemblerScript={type='STRING', description='The script to show in the editor section)'}},{'AutoAssemblerScript'},ai_showAutoAssemblerScript)                                         
 
+registerAITool('syntaxCheckAutoAssemblerScript',[[Checks the given auto assembler script if it will error out when assembling in the current state]],{
+                                                                                                                                                      AutoAssemblerScript={type='STRING', description='The autoassembler script to check)'},
+                                                                                                                                                      EnableSection={type='boolean', description='Check the enable section when true or not provided. If false, the disable section will be checked.  If there is no disable or enable section the script will be handled as an enable section'}                                                                                                                                                      
+                                                                                                                                                      },{'AutoAssemblerScript'},ai_syntaxCheckAutoAssemblerScript)                                         
+
+
 registerAITool('openMemoryView',[[Opens the memory view window]],{disassemblerAddress={type='STRING', description='The address for the disassembler'},
                                                                   hexviewAddress={type='STRING', description='The hexadecimal address for the disassembler'} 
                                                                  },{},ai_showMemoryView)    
                                                                  
 registerAITool('getVersionStrings',[[Retrieves the version resource strings of the target process. This includes, ProductVersion, FileDescription, InternalName, etc...]],{},{},ai_getVersionStrings)                                         
 
+--finish this:
+registerAITool('addAddressToAddressList',[[Creates a new memory record and adds it to the main address list]], 
+                                          {
+                                          --params
+                                          description={type='STRING', description='The memory record description'},
+                                          vartype={type='STRING', enum={'vtByte', 'vtWord', 'vtDword', 'vtQword', 'vtSingle', 'vtDouble', 'vtString', 'vtWideString'},
+                                                       description=[[The variable type of the memory record
+                                                        - vtByte: 1-byte integer
+                                                        - vtWord: 2-byte integer
+                                                        - vtDword: 4-byte integer
+                                                        - vtQword: 8-byte integer
+                                                        - vtSingle: 4-byte floating point 
+                                                        - vtDouble: 8-byte floating point 
+                                                        - vtString: an utf8 encoded string
+                                                        - vtWideString: a widestring
+                                                        ]]},
+                                          }
+                                          ,
+                                          {
+                                          --required
+                                          'description'
+                                          }
+                                          ,
+                                          ai_addAddressToAddressList)
 
-     
-                                             
-     
 
 --nuclear option (and halicinary):
 --registerAITool('executeLuaCode','Execute any lua code inside the current Cheat Engine instance', {script},{},ai_executeCode)

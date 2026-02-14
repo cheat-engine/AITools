@@ -3,7 +3,7 @@
 --Feel free to add support for locally executing LLM's
 
 --todo: add a voice to text and input the output to the AI, or if possible, enter voice as input directly ?
---      other AI systems besides google ai
+--      other AI systems besides google ai , websocket support
 
 
 --MIT License
@@ -17,9 +17,7 @@ local defaultmodel=s.DefaultModel or 'models/gemini-2.5-flash'
 local jsonparser=require 'json'
 local agreedToSendData=s.agreedToSendData or false
 
-local modelList=nil
-local modelListFetcher=nil
-
+modelList=nil
 local waitingForList={} --list of comboboxes waiting for a list of models
 
 local pathdelim=(getOperatingSystem()==0) and [[\]] or [[/]]
@@ -28,6 +26,8 @@ local basepath=extractFilePath(getCurrentScriptPath())
 if basepath==nil then
   basepath=getCheatEngineDir()..'Extensions'..pathdelim..'AITools'..pathdelim
 end
+
+local modelNameToNameLookup={} --for AIAccess 2 
   
 
 aitools={}
@@ -107,96 +107,96 @@ local fillModelList=nil
 local aiRequest=nil
 
 
-retrieveModelList=function()
-  if modelList==nil and modelListFetcher==nil then
-    if AIKEY==nil or AIKEY=='' then return end
+retrieveModelList=function(combobox)
+  
+  
+  if AIAccess==0 or AIAccess==1 then
+    local limits=getLimits()
     
-    modelListFetcher=createThread(function(t)
-      t.Name='modelListFetcher'
-      t.FreeOnTerminate(false)      
+    --return limits.models
+    if limits and limits.models then
+      for i=1,#limits.models do
+        combobox.items.add(limits.models[i].name)
+      end
+    else
+      if limits.error then
+        
+        messageDialog('Failure obtaining model list:'..limits.error..'\n\r\n\rConsider becoming a patreon member or get an AI key from google. You\'ll have access to better models', mtError)
+        return
+      else
+        combobox.items.add('<Failed obtaining model list>')
+        combobox.items.add('<It\'s more than the public one>')      
+      end
+    end
+    
+  elseif AIAccess==2 then
+    local i=getInternet()
+    i.Header='x-goog-api-key: '..AIKEY
+    jsonModelList=i.getURL('https://generativelanguage.googleapis.com/v1beta/models')
+    i.destroy()
 
-      local i=getInternet()
-      i.Header='x-goog-api-key: '..AIKEY
-      jsonModelList=i.getURL('https://generativelanguage.googleapis.com/v1beta/models')
-      i.destroy()
+    jml=jsonparser.decode(jsonModelList)
 
-      local jml=jsonparser.decode(jsonModelList)
+    if jml then
+      if jml.error then       
+        messageDialog('Failure obtaining model list:'..jml.error.message, mtError)
+        return
+      end
 
-      if jml then
-        if jml.error then
-
-          synchronize(function()
-            
-            messageDialog('Failure obtaining model list:'..jml.error.message, mtError)
-          end)
-          return
-        end
-
-        if jml.models then
-          modelList={}
-          for i=1,#jml.models do
-            local has_generateContent=false
-            if jml.models[i].supportedGenerationMethods then
-              for j=1,#jml.models[i].supportedGenerationMethods do
-                if jml.models[i].supportedGenerationMethods[j]=='generateContent' then
-                  has_generateContent=true
-                  break
-                end
+      if jml.models then
+        modelList={}
+        for i=1,#jml.models do
+          local has_generateContent=false
+          if jml.models[i].supportedGenerationMethods then
+            for j=1,#jml.models[i].supportedGenerationMethods do
+              if jml.models[i].supportedGenerationMethods[j]=='generateContent' then
+                has_generateContent=true
+                break
               end
-              if has_generateContent==true then
-               -- print(jml.models[i].name)
-                table.insert(modelList, jml.models[i])
-              end
+            end
+            if has_generateContent==true then
+              combobox.items.add(jml.models[i].displayName)              
             end
           end
         end
-
-        if waitingForList and (#waitingForList>0) then
-
-          synchronize(function()
-            for i=1,#waitingForList do
-              fillModelList(waitingForList[i])
-              waitingForList[i].OnGetItems=nil
-            end
-          end)
-        end
-
-        waitingForList={}
       end
-
-    end)
+     
+    end
   end
+
 end
 
-fillModelList=function(combobox)
 
-  combobox.items.clear()
-  if modelList==nil then
-    table.insert(waitingForList, combobox)
-
-    if modelListFetcher==nil then
-      if AIKEY then
-        combobox.items.add('retrieving list right now')
-        retrieveModelList()
-      else
-        combobox.items.add('Please fill in an API key first')
-      end
-    else
-      combobox.items.add('Please wait for the list to be obtained')
-    end
-
-  else
-    combobox.items.clear()
-    local newindex=-1
-    for i=1,#modelList do
-      combobox.items.add(modelList[i].displayName)
-      if modelList[i].name==defaultmodel then
-        newindex=i-1
-      end
-    end
-
-    combobox.itemIndex=newindex
+getLimits=function()
+  --returns the limits of the current patreon member
+  local r={}
+  if AIAccess==2 then    
+    r.maxtools=math.huge --infinite  
+    return r
   end
+  
+  local i=getInternet()
+  
+  --jsonparser
+  local s
+  
+  if AIAccess==0 then
+    s=i.getURL('https://cheatengine.org/ai/limits.php')      
+  elseif AIAccess==1 then
+    local i=getInternet()
+    i.Header='CEPATREONID:'..PatreonSessionID    
+    s=i.getURL('https://cheatengine.org/patreon/ailimits.php')
+  end
+   
+  i.destroy()
+ 
+  if s then
+    r=jsonparser.decode(s)  
+  else
+    r.maxtools=0
+  end
+  
+  return r
 end
 
 
@@ -271,7 +271,7 @@ x-goog-api-key: ]]..AIKEY
   if data.self and (not data.FullAnswerOnly) then
     data.Internet.OnReceiveData=function(sender, received)
     
-      --print("ondata: "..received)
+     -- print("ondata: "..received)
       --if inMainThread() then
       --  print("in main thread")
       --end      
@@ -395,8 +395,24 @@ x-goog-api-key: ]]..AIKEY
   end
 
 
-  --load tools (public max: 2, patreon max: basic 4 , discord: 8; discord+: 12; aibasic: 16; ai: 32 ai plus: 64 , private: unlimited)
+  --load tools
+  --
+  if data.limits==nil then
+    data.limits=getLimits() --limits is enforced on the server itself, this just saves some bandwith
+  end
   
+  local maxtools
+  
+  if data.limits then
+    if data.limits.error then
+      messageDialog(data.limits.error,mtError,mbOK)
+      data.limits=nil
+      return
+    else
+      maxtools=data.limits.maxtools  
+    end
+  end
+ 
  
   input.tools={}
   input.tools[1]={}  
@@ -410,7 +426,10 @@ x-goog-api-key: ]]..AIKEY
       e.parameters=data.parameters
       --not functionToCall and not Enabled
       table.insert(input.tools[1].functionDeclarations,e)
-    end  
+      if maxtools and #input.tools[1].functionDeclarations>maxtools then
+        break
+      end      
+    end
   end
   
   if #input.tools[1].functionDeclarations==0 then
@@ -498,7 +517,8 @@ x-goog-api-key: ]]..AIKEY
                             --parse the args
                             synchronize(function() 
                               if data.self and data.self.mOutput then
-                                data.self.mOutput.lines.add('Calling function :'..parts[j].functionCall.name)
+                                data.self.mOutput.lines.add(' *Calling function :'..parts[j].functionCall.name..'* \n\r')
+                                
                               end
                             end)  
                             
@@ -737,10 +757,11 @@ function spawnAIDialog(command, extra) --command and extra are optional
   end
   
   local AIAccessChange=function(sender)
+    data.limits=nil
+    f.cbModelSelection.Items.clear()
     if f.rbAIAccessPublic.Checked then
       f.edtAPIKEY.visible=false
       f.btnObtainKey.visible=false
-      f.cbModelSelection.enabled=false
       s.AIAccess='0'
       AIAccess=0
     elseif f.rbAIAccessPatreon.Checked then      
@@ -749,7 +770,6 @@ function spawnAIDialog(command, extra) --command and extra are optional
       f.edtAPIKEY.visible=true
       f.btnObtainKey.Caption='Refresh session'   
       f.btnObtainKey.visible=true
-      f.cbModelSelection.enabled=false
       s.AIAccess='1'
       AIAccess=1
     else
@@ -758,7 +778,6 @@ function spawnAIDialog(command, extra) --command and extra are optional
       f.edtAPIKEY.visible=true
       f.btnObtainKey.Caption='Obtain Key'    
       f.btnObtainKey.visible=true
-      f.cbModelSelection.enabled=true
       s.AIAccess='2'
       AIAccess=2
     end
@@ -785,27 +804,12 @@ function spawnAIDialog(command, extra) --command and extra are optional
   f.rbAIAccessPrivate.OnChange=AIAccessChange
   
   AIAccessChange()
-
-  if (AIAccess==2) and AIKEY then
-    fillModelList(f.cbModelSelection)
-  end
   
   -- f.cbModelSelection.OnDropDown=function(sender)
   f.cbModelSelection.OnGetItems=function(sender)
-    if AIAccess==2 then
-      if f.edtAPIKEY.text~='' then
-        applyAndSaveKey(f)      
-      end    
-    end
-
-    fillModelList(f.cbModelSelection)
-    if modelListFetcher then
-      if modelListFetcher.Waitfor(1000) then
-        modelListFetcher.destroy()
-      else
-        modelListFetcher.freeOnTerminate(true)
-      end
-      modelListFetcher=nil
+    if f.cbModelSelection.items.Count==0 then
+      --retrieveModelList(f.cbModelSelection)  
+      retrieveModelList(f.cbModelSelection)      
     end
   end
   
