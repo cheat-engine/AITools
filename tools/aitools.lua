@@ -580,7 +580,7 @@ end
 
 function ai_syntaxCheckAutoAssemblerScript(args)  
   local script=args.AutoAssemblerScript
-  local enablesection=arg.EnableSection or true
+  local enablesection=args.EnableSection or true
   r,r2=autoAssembleCheck(script,enablesection,false)
   
   if not r then
@@ -607,10 +607,246 @@ function ai_showMemoryView(args)
   return {status='success'}
 end
 
-function ai_addAddressToAddressList(args)
-  local description=args.description
+function ai_createMemoryRecord(args)
+  local description=args.description 
+
   
+  return synchronize(function()
+    local parent=nil
+    if args.parentNode then
+      local parent=AddressList.getMemoryRecordByID(id)
+      if parent==nil then      
+        return {error='the parentNode was not valid'}
+      end
+    end  
+  
+    local mr=AddressList.createMemoryRecord()
+    mr.description=description
+    
+    if args.script then
+      mr.Script=args.script
+      
+      if args.async then
+        mr.Async=args.async
+      end    
+    else
+      if args.address then
+        mr.Address=args.address
+      end
+      
+      if args.vartype then
+        if args.vartype=='vtWideString' then
+          args.vartype='vtUnicodeString'
+        end
+        mr.VarType=args.vartype
+      end
+      
+      if args.stringSize then
+        mr.String.Size=args.stringSize
+      end
+      
+      if args.offsets then
+        local i=1,#args.offsets do
+          mr.OffsetText[i-1]=args.offsets[i]
+        end
+      end       
+    end  
+    
+    if parent then
+      mr.parent=parent
+    end
+    return {status='success', memoryRecordID=mr.ID}
+  end)
 end
+
+function ai_editMemoryRecord(args)
+  return synchronize(function()
+    local id=args.memoryRecordID
+    
+    if id then
+      local mr=AddressList.getMemoryRecordByID(id)
+      if mr then
+        local description=args.description
+    
+        local parent=mr.parent
+        if args.parentNode then
+          local parent=AddressList.getMemoryRecordByID(id)
+          if parent==nil then      
+            return {error='the parentNode was not valid'}            
+          end
+        end
+
+        if args.description then
+          mr.description=args.description
+        end
+        
+        if args.script then
+          mr.Script=args.script
+          
+          if args.async then
+            mr.Async=args.async
+          end    
+        else
+          if args.address then
+            mr.AddressString=args.address
+          end
+          
+          if args.vartype then
+            if args.vartype=='vtWideString' then
+              args.vartype='vtUnicodeString'
+            end
+            mr.VarType=args.vartype
+          end
+          
+          if args.stringSize then
+            mr.String.Size=args.stringSize
+          end
+          
+          if args.offsets then
+            local i=1,#args.offsets do
+              mr.OffsetText[i-1]=args.offsets[i]
+            end
+          end  
+
+          if args.value then
+            mr.Value=args.value
+          end
+          
+          if args.active then
+            mr.Active=args.active            
+          end
+        end  
+        
+        if args.parentNode then
+          mr.parent=parent
+        end
+       
+        return {status='success'}        
+      else
+        return {error='The memoryrecord with the given ID was not found'}        
+      end  
+    else
+      return {error='memoryRecordID parameter was missing'}      
+    end
+  end)
+end
+
+function ai_deleteMemoryRecord(args)
+  local id=args.memoryRecordID
+  
+  return synchronize(function()
+    if id then
+      return synchronize(function()
+        local mr=AddressList.getMemoryRecordByID(id)
+        if mr then
+          mr.destroy()
+          return {status='success'}        
+        else
+          return {error='The memoryrecord with the given ID was not found'}        
+        end
+      end)    
+    else    
+      return {error='memoryRecordID parameter was missing'}
+    end
+  end)
+end
+
+function ai_getAddressList(args)
+  function scanNode(node)
+    local r={}
+    while node do
+      local e={}
+      e.memoryRecordID=node.memrec.ID
+      e.description=node.memrec.Description
+      if node.Count>0 then
+        e.children=scanNode(node.Items[0])
+      end
+
+      table.insert(r,e)
+
+      node=node.getNextSibling()
+    end
+
+    return r
+  end
+
+  local r
+  synchronize(function()
+    if AddressList.List.Items.Count>0 then
+      r=scanNode(AddressList.List.Items[0])
+    else
+      r={}
+    end
+  end)
+
+  return {status='success', list=r}
+end
+
+function ai_getMemoryRecordDetails(args)
+  local id=args.memoryRecordID
+  return synchronize(function()
+    if id then
+      local mr=AddressList.getMemoryRecordByID(id)
+      if mr then
+        local r={}
+        r.description=mr.Description
+        
+        if mr.VarType=='vtString' then
+          r.stringSize=mr.String.Size
+          
+          if mr.String.Unicode then
+            r.vartype=vtWideString
+          else
+            r.vartype=vtString
+          end
+        end     
+       
+        
+        if mr.Script then
+          r.script=mr.Script
+          r.async=mr.async
+        else
+          r.address=mr.Address
+          local offsets={}
+          
+          for i=1,mr.OffsetCount do
+            offsets[i]=mr.OffsetText[i-1]       
+          end        
+          if #offsets>0 then
+            r.offsets=offsets 
+          end
+        end
+        
+        r.value=mr.Value
+        
+        r.active=mr.Active
+        
+        if mr.parent then
+          r.parent=mr.parent.ID
+        end
+        
+        return {status='success', info=r}
+      else
+        return {error='The memoryrecord with the given ID was not found'}
+      end  
+    else
+      return {error='memoryRecordID parameter was missing'}
+    end  
+  end)
+end
+
+function ai_getMemoryRecordByDescription(args)
+  return synchronize(function()
+    local r=AddressList.getMemoryRecordByDescription(args.description)
+    if r then
+      return {memoryRecordID=r.ID}
+    else
+      return {error='No memory record with this description found'}
+    end
+  end)
+end
+
+
 
 registerAITool('getOpenedProcessName','Returns the currently opened processname. (the executable)', {},{},ai_getOpenedProcessName)
 registerAITool('openProcess','Opens the the most recent process with this name. Result is true on success and also provides the processID', {processname={type='STRING',description='name of the process to open'}},{"processname"},ai_openProcess)
@@ -835,13 +1071,80 @@ registerAITool('openMemoryView',[[Opens the memory view window]],{disassemblerAd
                                                                  
 registerAITool('getVersionStrings',[[Retrieves the version resource strings of the target process. This includes, ProductVersion, FileDescription, InternalName, etc...]],{},{},ai_getVersionStrings)                                         
 
---finish this:
-registerAITool('addAddressToAddressList',[[Creates a new memory record and adds it to the main address list]], 
+registerAITool('createMemoryRecord',[[Creates a new memory record and adds it to the main address list. It returns a memoryRecordID which will never change. Not when the user renames it and not when the user changes the order]], 
                                           {
                                           --params
-                                          description={type='STRING', description='The memory record description'},
+                                          description={type='STRING', description='The memory record description/name'},
                                           vartype={type='STRING', enum={'vtByte', 'vtWord', 'vtDword', 'vtQword', 'vtSingle', 'vtDouble', 'vtString', 'vtWideString'},
                                                        description=[[The variable type of the memory record
+                                                        - vtByte: 1-byte integer
+                                                        - vtWord: 2-byte integer
+                                                        - vtDword: 4-byte integer (Default)
+                                                        - vtQword: 8-byte integer
+                                                        - vtSingle: 4-byte floating point 
+                                                        - vtDouble: 8-byte floating point 
+                                                        - vtString: an utf8 encoded string
+                                                        - vtWideString: a widestring
+                                                        - vtAutoAssembler : autoassembler script
+                                                        ]]},
+                                                        
+                                          stringSize={type='INTEGER', description='The number of characters for the string if a string type'},
+                                                        
+                                          
+                                          address={type='STRING', description='The address/baseaddress of the record in hexadecimal notation. Omit the 0x part in front. This field can also contain known symbols to Cheat Engine'},                                                        
+                                          offsets={type='ARRAY', items={type='STRING'}, description=[[When set the address will be handled as a pointer address/
+                                                                                                     It is a list of offsets(hexadecimal values(no 0x in front), interpretable symbols or lua code)
+                                                                                                     During runtime, the first offset's value gets added to the baseAddress's value (in 32-bit 4 bytes, in 64-bit 8 bytes) : P1
+                                                                                                     If there is a 2nd offset, P1 will get read as a pointer and the value of the 2nd offset will be added to that : P2
+                                                                                                     This repeats until the last offset. The final address will then become the last pointer(Px)+lastoffset]]},
+                                          
+                                          script={type='STRING',description='An autoassembler script with [ENABLE] and [DISABLE] tags. It triggers when the Active checkbox gets checked/unchecked.  If set, vartype of vtAutoAssembler is assumed'},
+                                          async={type='BOOLEAN', description='If true the autoassembler script will run in a seperate thread when activating, not freezing the user\'s UI'},
+                                          parentNode={type='INTEGER', description='The parent memoryRecordID'}
+                                          }
+                                          ,
+                                          {
+                                          --required
+                                          'description'
+                                          }
+                                          ,
+                                          ai_createMemoryRecord)
+
+registerAITool('deleteMemoryRecord',[[Deletes a memoryrecord with the given memoryRecordID]],
+                                          {
+                                          --params
+                                          memoryRecordID={type='INTEGER', description='The unique identifier of a memoryrecord in the addresslist'},
+                                          }
+                                          ,
+                                          {
+                                          --required
+                                          'memoryRecordID'
+                                          }
+                                          ,
+                                          ai_deleteMemoryRecord)
+                                          
+registerAITool('getAddressList',[[Returns the current addreslist layout. Each entry contains the description and the unique memoryRecordID]],{},{},ai_getAddressList)
+                                          
+registerAITool('getMemoryRecordDetails',[[Get details like the description, vartype, address, offsets, script, parent, value, active state etc... for the given memoryRecord. See createMemoryRecord for details]],
+                                          {
+                                          --params
+                                          memoryRecordID={type='INTEGER', description='The unique identifier of a memoryrecord in the addresslist'},
+                                          }
+                                          ,
+                                          {
+                                          --required
+                                          'memoryRecordID'
+                                          }
+                                          ,
+                                          ai_getMemoryRecordDetails)
+                                          
+registerAITool('editMemoryRecord',[[edits an existing memory record identified by it's memoryRecordID]], 
+                                          {
+                                          --params
+                                          memoryRecordID={type='INTEGER', description='The unique identifier of a memoryrecord in the addresslist'},
+                                          description={type='STRING', description='The new description/name of the memory record'},
+                                          vartype={type='STRING', enum={'vtByte', 'vtWord', 'vtDword', 'vtQword', 'vtSingle', 'vtDouble', 'vtString', 'vtWideString'},
+                                                       description=[[The new variable type of the memory record
                                                         - vtByte: 1-byte integer
                                                         - vtWord: 2-byte integer
                                                         - vtDword: 4-byte integer
@@ -850,15 +1153,38 @@ registerAITool('addAddressToAddressList',[[Creates a new memory record and adds 
                                                         - vtDouble: 8-byte floating point 
                                                         - vtString: an utf8 encoded string
                                                         - vtWideString: a widestring
+                                                        - vtAutoAssembler : autoassembler script
                                                         ]]},
+                                                        
+                                          stringSize={type='INTEGER', description='The new maximum number of characters for the string if a string type'},
+                                                        
+                                          
+                                          address={type='STRING', description='The new address/baseaddress of the record in hexadecimal notation. Omit the 0x part in front. This field can also contain known symbols to Cheat Engine'},                                                        
+                                          offsets={type='ARRAY', items={type='STRING'}, description=[[When set the address will be handled as a pointer address/
+                                                                                                     It is a list of offsets(hexadecimal values(no 0x in front), interpretable symbols or lua code)
+                                                                                                     During runtime, the first offset's value gets added to the baseAddress's value (in 32-bit 4 bytes, in 64-bit 8 bytes) : P1
+                                                                                                     If there is a 2nd offset, P1 will get read as a pointer and the value of the 2nd offset will be added to that : P2
+                                                                                                     This repeats until the last offset. The final address will then become the last pointer(Px)+lastoffset]]},
+                                          
+                                          script={type='STRING',description='The updated/new autoassembler script with [ENABLE] and [DISABLE] tags'},
+                                          async={type='BOOLEAN', description='Changes the async variable. If true the autoassembler script will run in a seperate thread when activating, not freezing the user\'s UI'},
+                                          parentNode={type='INTEGER', description='Sets a new parent. null if you want it to be at the root'},
+                                          value={type='STRING', description='Sets the value of the memory record.  If it was frozen this will update the value it freeze at.  You can also set the value to (MemoryRecordDescription) and it will set the value to the same value as the memoryrecord with the given description'},
+                                          active={type='BOOLEAN', description=[[If the valuetype isn't vtAutoAssembler then when set to true will freeze the value to the current value, and when false unfreeze the value
+                                                                               If it is sa vtAutoAssembler setting this to true will assemble the [ENABLE] section. On false it will execute the [DISABLE] section]]}
                                           }
                                           ,
                                           {
                                           --required
-                                          'description'
+                                          'memoryRecordID'
                                           }
                                           ,
-                                          ai_addAddressToAddressList)
+                                          ai_editMemoryRecord)
+                                          
+registerAITool('getMemoryRecordByDescription',[[Returns a unique never changing memoryRecordID with the given description/name]],{description={type='STRING', description='The description of the memory record to look for'}},{'description'},ai_getMemoryRecordByDescription)
+                                               
+
+                                          
 
 
 --nuclear option (and halicinary):

@@ -13,7 +13,6 @@ local s=getSettings('AITOOLS',true)
 local AIAccess=tonumber(s.AIAccess)
 local PatreonSessionID=s.PatreonSessionID or getCEPatreonSessionID()
 local AIKEY=s.AIKEY
-local defaultmodel=s.DefaultModel or 'models/gemini-2.5-flash'
 local jsonparser=require 'json'
 local agreedToSendData=s.agreedToSendData or false
 
@@ -108,12 +107,17 @@ local aiRequest=nil
 
 
 retrieveModelList=function(combobox)
-  
+  if combobox then
+    combobox.clear()
+  end
   
   if AIAccess==0 or AIAccess==1 then
+    if combobox==nil then return end
+    
     local limits=getLimits()
     
     --return limits.models
+    
     if limits and limits.models then
       for i=1,#limits.models do
         combobox.items.add(limits.models[i].name)
@@ -129,13 +133,14 @@ retrieveModelList=function(combobox)
       end
     end
     
+    
   elseif AIAccess==2 then
     local i=getInternet()
     i.Header='x-goog-api-key: '..AIKEY
     jsonModelList=i.getURL('https://generativelanguage.googleapis.com/v1beta/models')
     i.destroy()
 
-    jml=jsonparser.decode(jsonModelList)
+    local jml=jsonparser.decode(jsonModelList)
 
     if jml then
       if jml.error then       
@@ -155,12 +160,22 @@ retrieveModelList=function(combobox)
               end
             end
             if has_generateContent==true then
-              combobox.items.add(jml.models[i].displayName)              
+              if combobox then
+                combobox.items.add(jml.models[i].displayName)              
+              end
+              modelList[jml.models[i].displayName]=jml.models[i]
             end
           end
         end
       end
      
+    end
+  end
+  
+  if combobox then
+    local i=combobox.items.indexOf(s.DefaultModel)
+    if i~=-1 then
+      combobox.itemIndex=i    
     end
   end
 
@@ -202,7 +217,7 @@ end
 
 aiRequest=function(data, message)
   local function handleError(message)
-    data.self.mOutput.lines.add('Error:'..message)
+    data.self.mOutput.lines.add('*Error:'..message..'*\n\r')
     
     if data.NotifyWhenDone then
       data.NotifyWhenDone(data,'Error:'..message)
@@ -314,24 +329,11 @@ x-goog-api-key: ]]..AIKEY
                 message=parsed.error
               end
               synchronize(function() 
-                data.self.mOutput.lines.add("Error:"..message)
+                data.self.mOutput.lines.add(" *Error:"..message..'*\n\r')
               end)
             end
 
           end)
-
-          --[[
-          if not valid then
-            print('Parser error:'..errstr)
-            print("----currentblock:---")
-            print(currentblock)
-            print("----")
-            print("----prevdata:---")
-            print(prevdata)
-            print("----")
-                   
-          end
-          --]]  
         end
       until currentblock==nil
 
@@ -342,19 +344,24 @@ x-goog-api-key: ]]..AIKEY
 
 
 
-  local modelname=defaultmodel
+  local modelname=s.DefaultModel
+  local modelnamepath=''
   
   data.AIAccessMode=AIAccess
 
-  if AIAccess==2 and data.self then
-    local mlindex=data.self.cbModelSelection.ItemIndex+1
-    if mlindex>0 and modelList and #modelList>=mlindex then
-      modelname=modelList[mlindex].name      
-      s.DefaultModel=modelname
-    else
-      modelname='models/gemini-2.5-flash'
-    end
+  if data.self then
+    modelname=data.self.cbModelSelection.Text      
+    s.DefaultModel=modelname
   end
+
+  if AIAccess==2 then
+    --get the modelnamepath
+    if modelList==nil then
+      retrieveModelList()
+    end
+    modelnamepath=modelList[modelname].name
+  end  
+  
   
   data.modelname=modelname
   
@@ -364,6 +371,11 @@ x-goog-api-key: ]]..AIKEY
     data.history.contents={}
   end
   local input=data.history
+  
+  if AIAccess~=2 then
+    --the modelname is sent to the server
+    input.modelname=modelname
+  end
  
   local newcontent={}
   newcontent.role='user'  
@@ -426,9 +438,13 @@ x-goog-api-key: ]]..AIKEY
       e.parameters=data.parameters
       --not functionToCall and not Enabled
       table.insert(input.tools[1].functionDeclarations,e)
-      if maxtools and #input.tools[1].functionDeclarations>maxtools then
-        break
-      end      
+      
+      --limit to maxtools
+      
+      --meh, if it takes too much sitepower I just block it and give an error to use a google AI key
+      --if maxtools and #input.tools[1].functionDeclarations>maxtools then
+      --  break
+      --end      
     end
   end
   
@@ -453,7 +469,7 @@ x-goog-api-key: ]]..AIKEY
     elseif AIAccess==1 then
       url='https://cheatengine.org/patreon/aiproxy.php'
     elseif AIAccess==2 then
-      url='https://generativelanguage.googleapis.com/v1beta/'..modelname..':streamGenerateContent'
+      url='https://generativelanguage.googleapis.com/v1beta/'..modelnamepath..':streamGenerateContent'
     end
     
     data.usedurl=url
@@ -482,8 +498,7 @@ x-goog-api-key: ]]..AIKEY
         data.parsedResult=parsed
       end)
       
-      if valid then
-       
+      if valid then       
         if parsed then
           if parsed.error then
             data.Error=true
@@ -552,10 +567,6 @@ x-goog-api-key: ]]..AIKEY
                                 data.self.mOutput.lines.add('result: Unknown function')                            
                               end)                              
                             end
-          
-  
-
-                            
                             table.insert(response.parts,r)
                           end
                         end                        
@@ -587,6 +598,16 @@ x-goog-api-key: ]]..AIKEY
       else
         data.Error=true
         textresult='Parse Error:'..err
+        if data.self then
+          synchronize(function() 
+            if result==nil or result:trim()=='' then
+              data.self.mOutput.lines.add('\n\r  *<server seems to be down>*');
+            else
+              data.self.mOutput.lines.add('\n\r<Error while receiving data:'..err..'>')                            
+            end
+          end)      
+        end
+        break;
       end
     end
     
@@ -759,6 +780,11 @@ function spawnAIDialog(command, extra) --command and extra are optional
   local AIAccessChange=function(sender)
     data.limits=nil
     f.cbModelSelection.Items.clear()
+    if s.DefaultModel~='' then
+      f.cbModelSelection.Items.add(s.DefaultModel)
+      f.cbModelSelection.ItemIndex=0
+    end
+    
     if f.rbAIAccessPublic.Checked then
       f.edtAPIKEY.visible=false
       f.btnObtainKey.visible=false
@@ -807,7 +833,7 @@ function spawnAIDialog(command, extra) --command and extra are optional
   
   -- f.cbModelSelection.OnDropDown=function(sender)
   f.cbModelSelection.OnGetItems=function(sender)
-    if f.cbModelSelection.items.Count==0 then
+    if f.cbModelSelection.items.Count<=1 then
       --retrieveModelList(f.cbModelSelection)  
       retrieveModelList(f.cbModelSelection)      
     end
