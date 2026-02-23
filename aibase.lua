@@ -1,4 +1,4 @@
---Proof of concept of implementing LLM callbacks to use with CE
+--Proof of concept of implementing LLM callbacks to use with CE without the need to use Python
 --Initially, this script implements the talking to and handling of a google AI type of LLM
 --Feel free to add support for locally executing LLM's
 
