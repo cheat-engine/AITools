@@ -671,7 +671,50 @@ function spawnAIDialog(command, extra) --command and extra are optional
   local animator
   local data={}
 
-  local f=createFormFromFile(basepath..'AIDialog.LFM')
+  local f=createFormFromFile(basepath..'AIDialog.LFM')  
+  
+  local function startAnimator()
+    if animator==nil then
+      local position = 1
+      local direction = 1
+      local maxLength = 7
+      
+      animator=createTimer(f)
+      animator.Enabled=false
+      animator.Interval=50
+      animator.OnTimer=function(t)
+        local a = string.rep(" ", position - 1)
+        local b = string.rep(" ", maxLength - position)
+
+        if f and f.btnSend then
+          f.btnSend.Caption = a .. "•" .. b
+        else
+          animator.destroy()
+          animator=nil
+        end
+
+        position = position + direction
+
+        if position >= maxLength then
+          direction = -1
+        elseif position <= 1 then
+          direction = 1 
+        end     
+      end      
+    end
+    
+    if animator then    
+      animator.Enabled=true
+    end  
+  end
+  
+  local function stopAnimator()
+    if animator then
+      animator.Enabled=false
+    end
+  end
+  
+
   data.self=f
   data.extra=extra
 
@@ -729,38 +772,7 @@ function spawnAIDialog(command, extra) --command and extra are optional
     
     applyAndSaveKey(f)
     
-    if animator==nil then
-      local position = 1
-      local direction = 1
-      local maxLength = 7
-      
-      animator=createTimer(f)
-      animator.Enabled=false
-      animator.Interval=50
-      animator.OnTimer=function(t)
-        local a = string.rep(" ", position - 1)
-        local b = string.rep(" ", maxLength - position)
-
-        if f and f.btnSend then
-          f.btnSend.Caption = a .. "•" .. b
-        else
-          animator.destroy()
-          animator=nil
-        end
-
-        position = position + direction
-
-        if position >= maxLength then
-          direction = -1
-        elseif position <= 1 then
-          direction = 1 
-        end     
-      end      
-    end
-    
-    if animator then    
-      animator.Enabled=true
-    end
+    startAnimator()
     
     if f and f.btnSend then
       f.btnSend.cursor=crHourGlass     
@@ -769,9 +781,11 @@ function spawnAIDialog(command, extra) --command and extra are optional
     data.NotifyWhenDone=function(data,r)
       if f and f.btnSend then
         f.btnSend.enabled=true
-        animator.Enabled=false
+        
         f.btnSend.Caption=translate('Send')
         f.btnSend.cursor=crDefault
+        
+        stopAnimator()
       end
     end
     aiRequest(data, message)
@@ -848,11 +862,18 @@ function spawnAIDialog(command, extra) --command and extra are optional
   f.mInput.setFocus()
 
   
-  if command then
+  if command then 
+    f.mOutput.Lines.add('>...')  
     f.btnSend.enabled=false 
+    f.btnSend.cursor=crHourGlass     
+    
     data.NotifyWhenDone=function(data,r)
-      f.btnSend.enabled=true
+      f.btnSend.enabled=true   
+      f.btnSend.cursor=crDefault
+      f.btnSend.Caption=translate('Send')
+      stopAnimator()      
     end
+    
     aiRequest(data, command)    
   end
 
@@ -876,24 +897,6 @@ function askAIQuestion(command, extra, notifyWhenDone) --NotifyWhenDone(data,res
     data.WaitForData=true
   end
   return aiRequest(data, command)
-end
-
-function askAILuaQuestion(command,notifyWhenDone)
-  --return a question that returns a luascript that you can execute
-  local r,err=askAIQuestion(command,'Only output Cheat Engine Lua Scripts. Omit the lua markdown header', notifyWhenDone)
-  
-  if r then
-    r=r:match('^```lua%s*(.-)%s*```$') or r --just in case it still added the markdown header
-    
-    --strip lua header if it did add it
-    
-    
-    if (notifyWhenDone==nil) and r==nil and err then 
-      return string.format([[messageDialog("%s", mtError)]], err)     
-    end
-  end;
-  
-  return r, err
 end
 
 

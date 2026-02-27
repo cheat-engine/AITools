@@ -538,13 +538,26 @@ function ai_readMemoryBlock(args)
   
   local elementSize=readSizes[elementType]
   
+  local readerror=false
   local r={}
   for i=1,count do
     local a=address+elementSize*(i-1)
     r[i]=reader(a)
+    
+    if r[i]==nil then
+      readerror=true
+    end
   end
   
-  return {status='success', result=r}
+  if readerror then
+    if #r==0 then
+      return {error='The memory is unreadable'}
+    else
+      return {status='partial success. Not all bytes are readable', result=r}
+    end
+  else  
+    return {status='success', result=r}
+  end
 end
 
 function ai_readString(args)
