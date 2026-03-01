@@ -198,7 +198,7 @@ getLimits=function()
   if AIAccess==0 then
     s=i.getURL('https://cheatengine.org/ai/limits.php')      
   elseif AIAccess==1 then
-    local i=getInternet()
+    local i=getInternet()    
     i.Header='CEPATREONID:'..PatreonSessionID    
     s=i.getURL('https://cheatengine.org/patreon/ailimits.php')
   end
@@ -742,6 +742,7 @@ function spawnAIDialog(command, extra) --command and extra are optional
       local sessionid=getCEPatreonSessionID(true)
       if sessionid then
         f.edtAPIKEY.text=sessionid
+        PatreonSessionID=sessionid
       end
     end
   end
@@ -866,6 +867,7 @@ function spawnAIDialog(command, extra) --command and extra are optional
     f.mOutput.Lines.add('>...')  
     f.btnSend.enabled=false 
     f.btnSend.cursor=crHourGlass     
+    startAnimator()
     
     data.NotifyWhenDone=function(data,r)
       f.btnSend.enabled=true   
