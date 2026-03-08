@@ -36,7 +36,7 @@ local function ai_scanMemory(args)
   end
   
   if scanoption then
-    ms.ScanOoption=scanoption
+    ms.ScanOption=scanoption
   end
    
   ms.scan()
@@ -51,14 +51,29 @@ local function ai_scanMemory(args)
   local i=#aiobjects+1 --perhaps store it in lastData and free when the form and history is deleted
   
   aiobjects[i]=ms
-  local r={status='success', scanID=i, foundCount=ms.FoundCount, message='Found '..ms.FoundCount..' results'}
-  if ms.FoundCount<=5 then
-    r.Addresses={}
-    local results=ms.Results
-    
-    for i=1,#results do      
-      r.Addresses[i]=string.format('0x%.8x',results[i])
-    end    
+  
+  local r
+  
+  if scanoption=='soUnknownValue'  then
+    r={status='success', scanID=i, message='Scan finished. call refineScan to filter the results'}
+    if ms.FoundCount<=5 then
+      r.Addresses={}
+      local results=ms.Results
+      
+      for i=1,#results do      
+        r.Addresses[i]=string.format('0x%.8x',results[i])
+      end    
+    end  
+  else   
+    r={status='success', scanID=i, foundCount=ms.FoundCount, message='Found '..ms.FoundCount..' results'}
+    if ms.FoundCount<=5 then
+      r.Addresses={}
+      local results=ms.Results
+      
+      for i=1,#results do      
+        r.Addresses[i]=string.format('0x%.8x',results[i])
+      end    
+    end
   end
   
    
@@ -73,7 +88,7 @@ local function ai_refineScan(args)
   
   local ms=aiobjects[scannerid]
   if ms==nil or ms.ClassName~='TMemScan' then
-    print("incorrect scannerid")
+    --print("incorrect scannerid")
     return {error='the scanID was incorrect'}
   end 
   
@@ -84,11 +99,12 @@ local function ai_refineScan(args)
   end
   
   ms.scan()
-  ms.waitTillDone()
+  if not ms.waitTillDone() then
+    return {error='ms.waitTillDone() returned false'}  
+  end
   
   if ms.ErrorString and ms.ErrorString~='' then
     local err=ms.ErrorString
-    ms.destroy()
     return {error='Scan error:'..err}
   end  
   
@@ -895,12 +911,14 @@ registerAITool('openProcess','Opens the the most recent process with this name. 
 registerAITool('scanMemory','Scan for a value and get a scannerID. This scannerID can be used to obtain the results and do a refineScan', 
                                              {value={type='STRING',description='the value to scan for'}, 
                                               value2={type='STRING',description='when scanoption is soValueBetween this determines the second part of the range'}, 
-                                              scanoption={type='STRING', enum={'soExactValue', 'soValueBetween', 'soBiggerThan', 'soSmallerThan'},
+                                              scanoption={type='STRING', enum={'soExactValue', 'soValueBetween', 'soBiggerThan', 'soSmallerThan', 'soUnknownValue'},
                                                           description=[[The scan operation to perform
-                                                          - soExactValue: Scan for an exact match of the value
+                                                          - soExactValue: Scan for an exact match of the value (default)
                                                           - soValueBetween: Scan for a value between value and value2 
                                                           - soBiggerThan: Scan for values bigger than the given value
-                                                          - soSmallerThan: Scan for values smaller than the given value]]
+                                                          - soSmallerThan: Scan for values smaller than the given value
+                                                          - soUnknownValue: Do a scan to obtain a memory snapshot of the target process but do not scan for a value yet. This is useful if you don't know the initial value
+                                                          ]]
                                                          },
                                               vartype={type='STRING', enum={'vtByte', 'vtWord', 'vtDword', 'vtQword', 'vtSingle', 'vtDouble', 'vtString', 'vtByteArray', 'vtGrouped', 'vtBinary', 'vtAll'},
                                                        description=[[The data type to scan for 
@@ -924,7 +942,7 @@ registerAITool('scanMemory','Scan for a value and get a scannerID. This scannerI
                                               
 registerAITool('refineScan', 'refines a previously made scan', 
                                              {
-                                             scanID={type='INTEGER', description='the scanID returned by the initial call to scanMemory'},
+                                             scanID={type='INTEGER', description='the scanID returned by the initial call to scanMemory.  Never ask the user for this value. If you do not have it, call scanMemory first'},
                                              value={type='STRING',description='the value to scan for or use depending on the scanoption'}, 
                                              scanoption={type='STRING', enum={'soExactValue', 'soValueBetween', 'soBiggerThan', 'soSmallerThan', 'soIncreasedValue', 'soIncreasedValueBy', 'soDecreasedValue', 'soDecreasedValueBy', 'soChanged', 'soUnchanged', 'soReadable'},
                                                          description=[[The scan operation to perform
