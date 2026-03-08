@@ -2,8 +2,6 @@
 --MIT License 
 --https://github.com/cheat-engine/AITools
 
-
-
 local function ai_getOpenedProcessName()
   if process then return {processname=process} else return {processname='no process opened yet'} end
 end
@@ -859,6 +857,37 @@ function ai_getMemoryRecordByDescription(args)
   end)
 end
 
+local writeFunctions={}
+writeFunctions['vtByte']=function(address, value) return writeByte(address,tonumber(value)) end
+writeFunctions['vtWord']=function(address, value) return writeSmallInteger(address, tonumber(value)) end
+writeFunctions['vtDword']=function(address, value) return writeInteger(address, tonumber(value)) end
+writeFunctions['vtQword']=function(address, value) return writeQword(address, tonumber(value)) end
+writeFunctions['vtSingle']=function(address, value) return writeFloat(address, tonumber(value)) end
+writeFunctions['vtDouble']=function(address, value) return writeDouble(address, tonumber(value)) end
+writeFunctions['vtString']=function(address, value) return writeString(address, value) end
+writeFunctions['vtWideString']=function(address, value) return writeString(address, value, true) end
+
+function ai_writeAddress(args)
+  local vartype=args.vartype
+  local address=getAddressSafe(args.address)
+  local value=args.value
+  local zeroTerminate=args.zeroTerminator
+  
+  local writer=writeFunctions[vartype]
+  
+  if writer then
+    local r=writer(address,value)
+    if r then
+      return {status='success'}      
+    else
+      return {error='write operation failed'}
+    end
+  else
+    return {error='Unsupported vartype'}
+  end
+  
+end
+
 
 
 registerAITool('getOpenedProcessName','Returns the currently opened processname. (the executable)', {},{},ai_getOpenedProcessName)
@@ -963,7 +992,7 @@ registerAITool('queryWatchPointStatus', [[Retrieves a list of entries containing
                                              {'watchpointID'}, --required
                                              ai_queryWatchPointStatus) --function  
                                              
-registerAITool('getDetailedWatchpointData', [[Retrieves detailed data about a watchpoint]],
+registerAITool('getDetailedWatchpointData', [[Retrieves detailed data about a watchpoint result. This includes the general purpose registers, stackview, stack snapshots, and the extended register states]],
                                              {
                                              watchpointID={type='INTEGER', description='The watchpointID returned by startWatchpoint'},                                                              
                                              address={type='STRING', description='The instruction address returned by queryWatchPointStatus'},                                                                                                           
@@ -1137,7 +1166,28 @@ registerAITool('deleteMemoryRecord',[[Deletes a memoryrecord with the given memo
                                           ai_deleteMemoryRecord)
                                           
 registerAITool('getAddressList',[[Returns the current addreslist layout. Each entry contains the description and the unique memoryRecordID]],{},{},ai_getAddressList)
-                                          
+     
+registerAITool('writeAddress',[[Writes a value to a certain address]], 
+                              {
+                                        address={type='STRING', description='The address to change in Cheat Engine address notation. This can be a symbol, or a hexadecimal address'},                                                        
+                                        vartype={type='STRING', enum={'vtByte', 'vtWord', 'vtDword', 'vtQword', 'vtSingle', 'vtDouble', 'vtString', 'vtWideString'},
+                                                       description=[[The variable type of the address to change/how to interpret the new value
+                                                        - vtByte: 1-byte integer
+                                                        - vtWord: 2-byte integer
+                                                        - vtDword: 4-byte integer
+                                                        - vtQword: 8-byte integer
+                                                        - vtSingle: 4-byte floating point 
+                                                        - vtDouble: 8-byte floating point 
+                                                        - vtString: an utf8 encoded string
+                                                        - vtWideString: a widestring                                                        
+                                                        ]]},
+                                        value={type='STRING', description='The new value. It will be interpreted according to the given vartype'}                
+                              },
+                              {'address','vartype','value'},
+                              ai_writeAddress                              
+                              )
+                                    
+     
 registerAITool('getMemoryRecordDetails',[[Get details like the description, vartype, address, offsets, script, parent, value, active state etc... for the given memoryRecord. See createMemoryRecord for details]],
                                           {
                                           --params
@@ -1151,7 +1201,8 @@ registerAITool('getMemoryRecordDetails',[[Get details like the description, vart
                                           ,
                                           ai_getMemoryRecordDetails)
                                           
-registerAITool('editMemoryRecord',[[edits an existing memory record identified by it's memoryRecordID]], 
+      
+registerAITool('editMemoryRecord',[[edits an existing memory record identified by it's memoryRecordID. This means the memoryrecord needs to be created first]], 
                                           {
                                           --params
                                           memoryRecordID={type='INTEGER', description='The unique identifier of a memoryrecord in the addresslist'},
@@ -1182,7 +1233,7 @@ registerAITool('editMemoryRecord',[[edits an existing memory record identified b
                                           script={type='STRING',description='The updated/new autoassembler script with [ENABLE] and [DISABLE] tags'},
                                           async={type='BOOLEAN', description='Changes the async variable. If true the autoassembler script will run in a seperate thread when activating, not freezing the user\'s UI'},
                                           parentNode={type='INTEGER', description='Sets a new parent. null if you want it to be at the root'},
-                                          value={type='STRING', description='Sets the value of the memory record.  If it was frozen this will update the value it freeze at.  You can also set the value to (MemoryRecordDescription) and it will set the value to the same value as the memoryrecord with the given description'},
+                                          value={type='STRING', description='Sets the value of the memory record.  If it was frozen this will update the value it freezes at.  You can also set the value to (MemoryRecordDescription) and it will set the value to the same value as the memoryrecord with the given description.  You do not have to Activate the record before this change takes effect'},
                                           active={type='BOOLEAN', description=[[If the valuetype isn't vtAutoAssembler then when set to true will freeze the value to the current value, and when false unfreeze the value
                                                                                If it is sa vtAutoAssembler setting this to true will assemble the [ENABLE] section. On false it will execute the [DISABLE] section]]}
                                           }
