@@ -954,9 +954,10 @@ registerAITool('getResultsAndValues', [[Retrieves a view of the results of the g
                                              count={type='INTEGER',description='The number of results to retrieve'}
                                              }, --parameters
                                              {'scanID', 'index', 'count'}, --required
-                                             ai_getResultsAndValues) --function                  
+                                             ai_getResultsAndValues) --function 
+          
 
-registerAITool('startWatchpoint', [[Sets a watchpoint at a given address so that each time it is hit it collects data and then continues the target. 
+registerAITool('startWatchpoint', [[Attaches the debugger to the target process if needed and sets a watchpoint at a given address so that each time it is hit it collects data and then continues the target. 
                                     When called the function returns a watchpointID which you can use with the queryWatchPointStatus function and later with the stopWatchpoint function
                                     After having obtained a valid watchpointID (>0) tell the user to do things in the game to trigger the watchpoint and tell you when done ]],
                                              {
@@ -985,7 +986,7 @@ registerAITool('deleteWatchpoint', [[Stops a previously created watchpoint if it
                                              {'watchpointID'}, --required
                                              ai_deleteWatchpoint) --function                                               
                                              
-registerAITool('queryWatchPointStatus', [[Retrieves a list of entries containing the instruction address, the opcode and the number of times that instruction was encountered during the watchpoint recording. The InstructionAddress can be used with getDetailedWatchpointData to obtain more information]],
+registerAITool('queryWatchPointStatus', [[Retrieves a list of instructions that have triggered the given watchpoint. Each entry contains the instruction address, the disassemly of the instruction,  and the number of times that instruction was encountered during the watchpoint recording, so far. Use getDetailedWatchpointData with the returned instruction address to obtain more information like the state of the registers at the time it got triggered]],
                                              {
                                              watchpointID={type='INTEGER', description='The watchpointID returned by startWatchpoint'},                                                              
                                              }, --parameters
