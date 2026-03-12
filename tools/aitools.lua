@@ -2,11 +2,11 @@
 --MIT License 
 --https://github.com/cheat-engine/AITools
 
-local function ai_getOpenedProcessName()
+function ai_getOpenedProcessName()
   if process then return {processname=process} else return {processname='no process opened yet'} end
 end
 
-local function ai_openProcess(args)
+function ai_openProcess(args)
   local processname=args.processname
   
   if processname then
@@ -22,12 +22,12 @@ local function ai_openProcess(args)
   end   
 end
 
-local function ai_scanMemory(args)
+function ai_scanMemory(args)
   local value=args.value
   local value2=args.value2
   local scanoption=args.scanoption
   local alignment=args.alignment 
-  local vartype=vartype
+  local vartype=args.vartype
   local ms=createMemScan()
  
   ms.ScanValue=value
