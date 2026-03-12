@@ -94,6 +94,10 @@ local function ai_refineScan(args)
   
   ms.value=args.value
   
+  if args.value2 then
+    ms.value=args.value2
+  end
+  
   if args.scanoption then
     ms.scanoption=args.scanoption
   end
@@ -173,7 +177,7 @@ function ai_startWatchpoint(args)
 
       local r,r2=debug_setBreakpoint(a,watchsize,watchtype,function()
         --add to data.result
-       -- print("bp triggered")
+        --print("bp triggered")
         local instructionPointer
                
         local r={}        
@@ -517,6 +521,8 @@ function ai_getTargetedProcessInfo()
   else
     r.callingConvention='System V'
   end
+  
+  return {ProcessInfo=r}
 end
 
 local readFunctions={}
@@ -738,7 +744,7 @@ function ai_editMemoryRecord(args)
           if args.value then
             mr.Value=args.value
           end
-          
+                    
           if args.active then
             mr.Active=args.active            
           end
@@ -908,7 +914,7 @@ end
 
 registerAITool('getOpenedProcessName','Returns the currently opened processname. (the executable)', {},{},ai_getOpenedProcessName)
 registerAITool('openProcess','Opens the the most recent process with this name. Result is true on success and also provides the processID', {processname={type='STRING',description='name of the process to open'}},{"processname"},ai_openProcess)
-registerAITool('scanMemory','Scan for a value and get a scannerID. This scannerID can be used to obtain the results and do a refineScan', 
+registerAITool('scanMemory','Scan for a value and get a scannerID. This scannerID can be used to obtain the results and do a refineScan. Don\'t bother informing the user what the scannerID is. it is ambiguous for the user', 
                                              {value={type='STRING',description='the value to scan for'}, 
                                               value2={type='STRING',description='when scanoption is soValueBetween this determines the second part of the range'}, 
                                               scanoption={type='STRING', enum={'soExactValue', 'soValueBetween', 'soBiggerThan', 'soSmallerThan', 'soUnknownValue'},

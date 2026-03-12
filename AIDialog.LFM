@@ -249,6 +249,7 @@ object frmAIDialog: TCEForm
       Font.Name='Courier New'
       Font.Size=10
       Font.Quality=fqCleartypeNatural
+      Font.Color=clWindowText
       BorderStyle = bsNone
       Gutter.Visible = False
       Gutter.Width = 95
@@ -751,7 +752,6 @@ object frmAIDialog: TCEForm
       Align = alClient
       Color = clWindow
       TabOrder = 1
-      HeaderColor = clNavy
     end
     object CESplitter1: TCESplitter
       Cursor = crVSplit
