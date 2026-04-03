@@ -661,7 +661,8 @@ function ai_createMemoryRecord(args)
       
       if args.async then
         mr.Async=args.async
-      end    
+      end 
+      mr.VarType='vtAutoAssembler'      
     else
       if args.address then
         mr.Address=args.address
@@ -1152,7 +1153,7 @@ registerAITool('createMemoryRecord',[[Creates a new memory record and adds it to
                                                         - vtDouble: 8-byte floating point 
                                                         - vtString: an utf8 encoded string
                                                         - vtWideString: a widestring
-                                                        - vtAutoAssembler : autoassembler script
+                                                        - vtAutoAssembler : cheat engine autoassembler script
                                                         ]]},
                                                         
                                           stringSize={type='INTEGER', description='The number of characters for the string if a string type'},

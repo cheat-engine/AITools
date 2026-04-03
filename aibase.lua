@@ -931,14 +931,41 @@ function initAIMenuItems()
       --get the function
       local d=f.disassembleSelectedFunction()
       if d and d~='' then      
-        spawnAIDialog([[[The following code is a function copied by Cheat Engine's disassembler. Describe what this function does: 
+        spawnAIDialog([[The following code is a function copied by Cheat Engine's disassembler. Describe what this function does: 
 ```
 ]]..d..[[
 ```]])
       end
     end
     
+    local miAI_PseudoCode=createMenuItem(f)
+    miAI_PseudoCode.Caption=translate('Generate pseudocode for this function')
+    
+    f.debuggerpopup.Items.add(miAI_PseudoCode)   
+
+    local ii=f.mvImageList.add(logo)
+    miAI_PseudoCode.ImageIndex=ii
+    miAI_PseudoCode.OnClick=function(sender)
+      --get the function
+      local d=f.disassembleSelectedFunction()
+      if d and d~='' then      
+        spawnAIDialog([[The following code is a function copied by Cheat Engine's disassembler. Generate pseudocode based on this function :
+```
+]]..d..[[
+```]])
+      end
+    end
   end)
+  
+  --forEachAndFutureForm('TfrmLuaEngine',function(f)
+  --  local miAI_FixThisScript...
+  --end)
+  
+  --forEachAndFutureForm('TfrmAutoInject',function(f)
+  --  local miAI_FixThisAssemblerScript...
+  --end)  
+  
+  
   
   local mi=createMenuItem(MainForm)
   mi.Caption=translate('Ask AI')  
@@ -950,4 +977,12 @@ function initAIMenuItems()
   MainForm.miHelp.insert(MainForm.miLuaDocumentation.MenuIndex,mi)  
 end
 
-initAIMenuItems()
+if createSettingsOption then
+  createSettingsOption('EnableAITools','Enable use of AI functions (Requires restart of CE to apply)', ctBoolean, 'AI Tools', true)
+
+  if getSettingsOption('EnableAITools')==true then
+    initAIMenuItems()
+  end
+else
+  initAIMenuItems()
+end
