@@ -26,9 +26,11 @@ function ai_scanMemory(args)
   local value=args.value
   local value2=args.value2
   local scanoption=args.scanoption
-  local alignment=args.alignment 
+  local alignment=args.alignment
   local vartype=args.vartype
   local ms=createMemScan()
+  
+  --todo: create a new scantab or window with a custom foundlist/progressbar
  
   ms.ScanValue=value
   if vartype then
@@ -907,10 +909,90 @@ function ai_writeAddress(args)
     end
   else
     return {error='Unsupported vartype'}
-  end
-  
+  end  
 end
 
+function ai_getLuaEngineScript(args)
+  local id=args.LuaEngineWindowID
+  local luaengine
+  if id and id~=0 then
+    luaengine=aiobjects[id]
+  else
+    luaengine=getLuaEngine()
+  end
+  
+  if luaengine==nil then
+    return {error='Invalid LuaEngineWindowID'}
+  end
+  
+  
+  local script
+  
+  synchronize(function()
+    script=luaengine.mscript.lines.text    
+  end)
+  
+  return {status='success',script=script}
+end
+
+function ai_setLuaEngineScript(args)
+  local id=args.LuaEngineWindowID
+  local script=args.script
+  local luaengine
+  if id and id~=0 then
+    luaengine=aiobjects[id]
+  else
+    luaengine=getLuaEngine()
+  end
+  
+  if luaengine==nil then
+    return {error='Invalid LuaEngineWindowID'}
+  end
+  
+  synchronize(function()
+    luaengine.mscript.lines.text=script
+  end)  
+  return {status='success'}
+end
+
+function ai_getAutoAssemblerScript(args)
+  local id=args.AutoAssemblerWindowID
+  local aawindow
+  if id then
+    aawindow=aiobjects[id] 
+  end
+  
+  if aawindow==nil then
+    return {error='Invalid AutoAssemblerWindowID'}
+  end
+  
+  
+  local script
+  
+  synchronize(function()
+    script=aawindow.assembleScreen.lines.text    
+  end)
+  
+  return {status='success',script=script}
+end
+
+function ai_setAutoAssemblerScript(args)
+  local id=args.AutoAssemblerWindowID
+  local script=args.script
+  local aawindow
+  if id then
+    aawindow=aiobjects[id]
+  end
+  
+  if aawindow==nil then
+    return {error='Invalid LuaEngineWindowID'}
+  end
+  
+  synchronize(function()
+    aawindow.assembleScreen.lines.text=script
+  end)  
+  return {status='success'}
+end
 
 
 registerAITool('getOpenedProcessName','Returns the currently opened processname. (the executable)', {},{},ai_getOpenedProcessName)
@@ -1125,7 +1207,42 @@ registerAITool('readString', [[Reads a string of memory from a memory address]],
                
 registerAITool('showLuaScript',[[Opens a lua engine window and inserts the provided lua script in the editor field]],{LuaScript={type='STRING', description='The script to show in the editor section)'}},{'LuaScript'},ai_showLuaScript)                                         
 
-registerAITool('showAutoAssemblerScript',[[Opens an autoAssembler windows and inserts the provides auto assembler script in the editor field]],{AutoAssemblerScript={type='STRING', description='The script to show in the editor section)'}},{'AutoAssemblerScript'},ai_showAutoAssemblerScript)                                         
+registerAITool('getLuaEngineScript',[[retrieves the lua script from a specific lua engine window]],
+                                                  {
+                                                    LuaEngineWindowID={type='INTEGER', description='The identifier of the lua engine window.  If not provided WindowID will be 0, which is the default Lua Engine window'}
+                                                  },
+                                                  {},--
+                                                  ai_getLuaEngineScript)
+
+registerAITool('setLuaEngineScript',[[sets the lua script in a specific lua engine window]],
+                                                  {
+                                                    LuaEngineWindowID={type='INTEGER', description='The identifier of the lua engine window.  If not provided WindowID will be 0, which is the default Lua Engine window'},
+                                                    script={type='STRING', description='The new lua script'}
+                                                  },
+                                                  {'script'},
+                                                  ai_setLuaEngineScript)
+
+
+
+                                                  
+
+registerAITool('showAutoAssemblerScript',[[Opens an autoAssembler window and inserts the provided auto assembler script in the editor field]],{AutoAssemblerScript={type='STRING', description='The script to show in the editor section)'}},{'AutoAssemblerScript'},ai_showAutoAssemblerScript)                                         
+
+registerAITool('getAutoAssemblerScript',[[retrieves the autoassembler script from a specific autoassembler window]],
+                                                  {
+                                                    AutoAssemblerWindowID={type='INTEGER', description='The identifier of the AutoAssembler window'}
+                                                  },
+                                                  {'AutoAssemblerWindowID'},--
+                                                  ai_getAutoAssemblerScript)
+
+registerAITool('setAutoAssemblerScript',[[sets the lua script in a specific lua engine window]],
+                                                  {
+                                                    AutoAssemblerWindowID={type='INTEGER', description='The identifier of the AutoAssembler window.  If not provided WindowID will be 0, which is the default Lua Engine window'},
+                                                    script={type='STRING', description='The new autoassembler script'}
+                                                  },
+                                                  {'AutoAssemblerWindowID','script'},
+                                                  ai_setAutoAssemblerScript)
+                                                  
 
 registerAITool('syntaxCheckAutoAssemblerScript',[[Checks the given auto assembler script if it will error out when assembling in the current state]],{
                                                                                                                                                       AutoAssemblerScript={type='STRING', description='The autoassembler script to check)'},

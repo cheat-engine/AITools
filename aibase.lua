@@ -382,8 +382,7 @@ x-goog-api-key: ]]..AIKEY
   newcontent.parts={}  
   newcontent.parts[1]={}
   newcontent.parts[1].text=message  
-  table.insert(input.contents,newcontent) 
-  
+
  
  
   if AIAccess==2 then    
@@ -395,17 +394,21 @@ x-goog-api-key: ]]..AIKEY
     
   end
 
-  if data.Extra then
+  if data.Extra then --
     if AIAccess==2 then      
       input.system_instruction={}
       input.system_instruction.parts={}
       input.system_instruction.parts[1]={}
       input.system_instruction.parts[1].text=data.Extra
-    else
+    else    
+      newcontent.parts[2]={}
       newcontent.parts[2].text=data.Extra      
+      data.Extra=nil      
     end
   end
-
+  
+  table.insert(input.contents,newcontent) 
+    
 
   --load tools
   --
@@ -716,7 +719,7 @@ function spawnAIDialog(command, extra) --command and extra are optional
   
 
   data.self=f
-  data.extra=extra
+  data.Extra=extra
 
 
   f.OnClose=function(sender)
@@ -880,6 +883,8 @@ function spawnAIDialog(command, extra) --command and extra are optional
   end
 
   _G.debug_LastAIForm=f
+  
+  return f
 end
 
 function askAIQuestion(command, extra, notifyWhenDone) --NotifyWhenDone(data,result)
@@ -957,13 +962,96 @@ function initAIMenuItems()
     end
   end)
   
-  --forEachAndFutureForm('TfrmLuaEngine',function(f)
-  --  local miAI_FixThisScript...
-  --end)
+  forEachAndFutureForm('TfrmLuaEngine',function(f)
+    local id  
+    local oldDestroy
+    local aif --ai form
+    local miAI_sep=createMenuItem(f)
+
+    miAI_sep.Caption='-'
+    
+    local miAI_AskAboutScript=createMenuItem(f)
+    
+    miAI_AskAboutScript.Name='miAI_AskAboutScript'
+    miAI_AskAboutScript.Caption=translate('Ask about this script')
+    
+    f.mscript.PopupMenu.Items.add(miAI_sep)
+    f.mscript.PopupMenu.Items.add(miAI_AskAboutScript)
+    local ii=f.mscript.PopupMenu.Images.add(logo)
+    miAI_AskAboutScript.ImageIndex=ii
+    miAI_AskAboutScript.OnClick=function(sender)
+      if id==nil then        
+        id=#aiobjects+1
+        aiobjects[id]=f
+        
+        oldDestroy=f.OnDestroy
+        
+        f.OnDestroy=function(s)
+          if aif then
+            aif.close()
+            aif=nil
+          end
+          aiobjects[id]=nil
+          if oldDestroy then
+            oldDestroy(s)
+          end
+        end        
+      end
+      aif=spawnAIDialog(nil,'\n\r This is from a LuaEngine window where the LuaEngineWindowID='..id)
+      aif.mOutput.Lines.add('###Ask your questions about the current Lua Engine script here')
+      aif.Caption=aif.Caption..' (Lua Engine)'
+      aif.OnDestroy=function(s)
+        aif=nil
+      end
+    end
+  end)
   
-  --forEachAndFutureForm('TfrmAutoInject',function(f)
-  --  local miAI_FixThisAssemblerScript...
-  --end)  
+  forEachAndFutureForm('TfrmAutoInject',function(f)
+    local id
+    local oldDestroy
+    local aif --ai form
+    local miAI_sep=createMenuItem(f)
+    miAI_sep.Caption='-'
+    
+    local miAI_AskAboutScript=createMenuItem(f)
+    
+    miAI_AskAboutScript.Name='miAI_AskAboutScript'
+    miAI_AskAboutScript.Caption=translate('Ask about this script')
+    
+    f.assembleScreen.PopupMenu.Items.add(miAI_sep)
+    f.assembleScreen.PopupMenu.Items.add(miAI_AskAboutScript)
+    local ii=f.assembleScreen.PopupMenu.Images.add(logo)
+    miAI_AskAboutScript.ImageIndex=ii
+    miAI_AskAboutScript.OnClick=function(sender)
+      if id==nil then
+        id=#aiobjects+1
+        aiobjects[id]=f
+        
+        oldDestroy=f.OnDestroy
+        
+        f.OnDestroy=function(s)
+          if aif then
+            aif.close()
+            aif=nil
+          end
+          
+          aiobjects[id]=nil
+          if oldDestroy then
+            oldDestroy(s)
+          end
+        end
+        
+      end
+
+      aif=spawnAIDialog(nil,'\n\r This is from an AutoAssembler window where the AutoAssemblerWindowID='..id)
+      aif.mOutput.Lines.add('###Ask your questions about the current AutoAssembler script here')
+      aif.Caption=aif.Caption..' (AutoAssembler)'
+      aif.OnDestroy=function(s)
+        aif=nil
+      end
+      
+    end
+  end)  
   
   
   
