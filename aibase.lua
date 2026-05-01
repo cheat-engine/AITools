@@ -1066,7 +1066,7 @@ function initAIMenuItems()
 end
 
 if createSettingsOption then
-  createSettingsOption('EnableAITools','Enable use of AI functions (Requires restart of CE to apply)', ctBoolean, 'AI Tools', true)
+  createSettingsOption('EnableAITools','Enable use of AI functions (Requires restart of CE to apply)', ctBoolean, 'AI Tools', 2, true)
 
   if getSettingsOption('EnableAITools')==true then
     initAIMenuItems()
