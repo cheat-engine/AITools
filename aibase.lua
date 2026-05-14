@@ -136,6 +136,9 @@ retrieveModelList=function(combobox)
     
   elseif AIAccess==2 then
     local i=getInternet()
+    if AIKEY==nil then
+      AIKEY=combobox.Owner.edtAPIKEY.text
+    end
     i.Header='x-goog-api-key: '..AIKEY
     jsonModelList=i.getURL('https://generativelanguage.googleapis.com/v1beta/models')
     i.destroy()
