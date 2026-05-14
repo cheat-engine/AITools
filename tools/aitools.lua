@@ -22,17 +22,104 @@ function ai_openProcess(args)
   end   
 end
 
+local function UpdateMemscanDialog(f,ms)
+  synchronize(function()
+    f.lblVartype.caption='vartype:'..ms.VarType    
+    f.lblLastScanOption.Caption='Last scan option:'..ms.ScanOption
+    f.lblLastScanValue.Caption='Scan Value: '..ms.ScanValue
+    f.lblResultsFound.Caption='Number of results: '..ms.FoundCount   
+    
+    f.lvResults.Items.Count=ms.FoundCount
+    local fl=ms.FoundList
+    if fl then
+      fl.Initialize()
+    end
+  end)
+  
+end
+
+--test:
+--ai_scanMemory({value=100})
 function ai_scanMemory(args)
+  local f
+  local pb
+  local fl
+  local ms
+  
+  synchronize(function()
+    f=createForm()
+    f.Caption='AI memscan session'  
+    f.BorderStyle=bsSizeable
+    f.Position=poScreenCenter
+    f.OnClose=nil
+
+    local infoPanel=createPanel(f)
+    infoPanel.ChildSizing.ControlsPerLine=2
+    infoPanel.ChildSizing.Layout='cclLeftToRightThenTopToBottom'
+    infoPanel.ChildSizing.HorizontalSpacing=f.Canvas.getTextWidth('XXX')
+
+    local lblVartype=createLabel(f)
+    lblVartype.name='lblVartype'    
+    lblVartype.Parent=infoPanel   
+
+    local lblLastScanOption=createLabel(f)
+    lblLastScanOption.Parent=infoPanel
+    lblLastScanOption.name='lblLastScanOption'   
+    
+    local lblLastScanValue=createLabel(f)
+    lblLastScanValue.Parent=infoPanel
+    lblLastScanValue.name='lblLastScanValue'
+    
+    local lblResultsFound=createLabel(f)
+    lblResultsFound.Parent=infoPanel
+    lblResultsFound.name='lblResultsFound'    
+    
+    infoPanel.align=alTop
+    infoPanel.autoSize=true
+    
+    pb=createProgressBar(f)
+    pb.align=alTop
+    pb.Name='pbMemscanProgress'
+    
+    lv=createListView(f)    
+    lv.align=alClient
+    lv.name='lvResults'
+    lv.AutoWidthLastColumn=true
+    
+    lv.OnData=function(sender, li)
+      if fl then
+        li.Caption=fl.getAddress(li.Index)
+        li.SubItems.add(fl.getValue(li.index))
+      end
+    end
+    
+    cAddress=lv.Columns.add()
+    cAddress.Caption='Address'
+    cValue=lv.Columns.add()
+    cValue.Caption='Value'
+    cAddress.Width=f.Canvas.getTextWidth('xxxxxxxxxxxxxx')
+    cValue.Width=lv.ClientWidth-cAddress.Width
+    
+    lv.OwnerData=true  
+  end)
+  
+
+  
+  
+  
   local value=args.value
   local value2=args.value2
   local scanoption=args.scanoption
   local alignment=args.alignment
   local vartype=args.vartype
-  local ms=createMemScan()
-  
-  --todo: create a new scantab or window with a custom foundlist/progressbar
- 
+  ms=createMemScan(pb)
+  fl=createFoundList(ms) 
+
   ms.ScanValue=value
+  if value2 then 
+    ms.ScanValue2=value2
+  end
+  
   if vartype then
     ms.VarType=vartype
   end
@@ -40,10 +127,19 @@ function ai_scanMemory(args)
   if scanoption then
     ms.ScanOption=scanoption
   end
-   
+  
+  if alignment then
+    ms.FastScanMethod='fsmAligned'  
+    Fastscanparameter=alignment
+  end
+  
+  UpdateMemscanDialog(f,ms)    
   ms.scan()
   
   ms.waitTillDone()
+  UpdateMemscanDialog(f,ms)    
+  
+  
   if ms.ErrorString and ms.ErrorString~='' then
     local err=ms.ErrorString
     ms.destroy()
@@ -52,7 +148,13 @@ function ai_scanMemory(args)
   
   local i=#aiobjects+1 --perhaps store it in lastData and free when the form and history is deleted
   
-  aiobjects[i]=ms
+ 
+  local memscaninfo={}
+  memscaninfo.ms=ms
+  memscaninfo.f=f
+  memscaninfo.type='memscaninfo'
+ 
+  aiobjects[i]=memscaninfo
   
   local r
   
@@ -88,12 +190,13 @@ local function ai_refineScan(args)
  -- print("ai_refineScan")
   --printf("scannerid=%d", scannerid)
   
-  local ms=aiobjects[scannerid]
-  if ms==nil or ms.ClassName~='TMemScan' then
-    --print("incorrect scannerid")
+  if aiobjects[scannerid]==nil or type(aiobjects[scannerid])~='table' or aiobjects[scannerid].type~='memscaninfo' then
     return {error='the scanID was incorrect'}
-  end 
+  end
   
+  local ms=aiobjects[scannerid].ms
+  local f=aiobjects[scannerid].f
+    
   ms.value=args.value
   
   if args.value2 then
@@ -108,6 +211,9 @@ local function ai_refineScan(args)
   if not ms.waitTillDone() then
     return {error='ms.waitTillDone() returned false'}  
   end
+  
+  UpdateMemscanDialog(f,ms)
+  
   
   if ms.ErrorString and ms.ErrorString~='' then
     local err=ms.ErrorString
@@ -132,15 +238,21 @@ function ai_getResultsAndValues(args) --startindex, count
   local index=args.index
   local count=args.count
   
-  local ms=aiobjects[scannerid]
-  if ms==nil or ms.ClassName~='TMemScan' then
-    print("ai_getResultsAndValues: incorrect scannerid")
+  if aiobjects[scannerid]==nil or type(aiobjects[scannerid])~='table' or aiobjects[scannerid].type~='memscaninfo' then
     return {error='the scanID was incorrect'}
-  end 
+  end
   
+  local ms=aiobjects[scannerid].ms
+  local f=aiobjects[scannerid].f
+   
   local r={}
-  local al=createFoundList(ms)
+  
+  local al=ms.FoundList
+  if al==nil then
+    al=createFoundList(ms)    
+  end
   al.initialize()
+  
   local maxindex=math.min(al.count-1,index+count-1)
   
   for i=index,maxindex do
@@ -152,8 +264,8 @@ function ai_getResultsAndValues(args) --startindex, count
     table.insert(r,e)
   end
   
-  al.deinitialize()  
-  al.destroy() al=nil
+ -- al.deinitialize()  
+ -- al.destroy() al=nil
   
   return {status='success', result=r}
 end
