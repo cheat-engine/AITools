@@ -289,7 +289,7 @@ x-goog-api-key: ]]..AIKEY
   if data.self and (not data.FullAnswerOnly) then
     data.Internet.OnReceiveData=function(sender, received)
     
-     -- print("ondata: "..received)
+     -- print("OnReceiveData enter: "..received)
       --if inMainThread() then
       --  print("in main thread")
       --end      
@@ -342,6 +342,8 @@ x-goog-api-key: ]]..AIKEY
 
       data.lastreceived=r
       data.allprevdata=allprevdata
+      
+     -- print("OnReceiveData exit")
     end
   end
 
@@ -386,31 +388,63 @@ x-goog-api-key: ]]..AIKEY
   newcontent.parts[1]={}
   newcontent.parts[1].text=message  
 
+  local sysInstruction='You are a professional reverse engineer using Cheat Engine. Use tools when possible, but fall back on your internal knowledge of Cheat Engine. Do not say you can not help.' 
  
- 
-  if AIAccess==2 then    
-    input.system_instruction={}
-    input.system_instruction.parts={}
-    input.system_instruction.parts[1]={}
-    --input.system_instruction.parts[1].text='You are currently being used by the Cheat Engine application. Use tools when possible, but fall back on your internal knowledge to answer general questions'
-    input.system_instruction.parts[1].text='You are a professional reverse engineer using Cheat Engine. Use tools when possible, but fall back on your internal knowledge of Cheat Engine.  Do not say you can not help'
-    
+  
+  
+  local os=getOperatingSystem()
+  local arch=getSystemArchitecture()
+  if os==2 then --linux
+    baseSystemText="You're running on Linux"
+  elseif os==1 then --maxos
+    baseSystemText="You're running on MacOS"
+  else
+    baseSystemText="You're running on Windows"
   end
-
-  if data.Extra then --
-    if AIAccess==2 then      
-      input.system_instruction={}
-      input.system_instruction.parts={}
-      input.system_instruction.parts[1]={}
-      input.system_instruction.parts[1].text=data.Extra
-    else    
-      newcontent.parts[2]={}
-      newcontent.parts[2].text=data.Extra      
-      data.Extra=nil      
-    end
+  if arch==3 then
+    baseSystemText=baseSystemText.." (Arm 64-bit)\n"
+  elseif arch==2 then
+    baseSystemText=baseSystemText.." (Arm 32-bit)\n"
+  elseif arch==1 then
+    baseSystemText=baseSystemText.." (x86_64)\n"    
+  else
+    baseSystemText=baseSystemText.." (32-bit)\n"
   end
   
-  table.insert(input.contents,newcontent) 
+  local skillCatalogPrompt = (getSkillsCatalogPrompt and getSkillsCatalogPrompt()) or ''
+  if skillCatalogPrompt ~= '' then
+    baseSystemText = baseSystemText .. '\n\n' .. skillCatalogPrompt
+  end
+  
+  
+
+  if data.Extra then
+    baseSystemText = baseSystemText .. '\n\nAdditional Context:\n' .. data.Extra
+  end
+
+  if AIAccess == 2 then
+    input.system_instruction = {}
+    input.system_instruction.parts = {}
+    input.system_instruction.parts[1] = {}
+    input.system_instruction.parts[1].text = sysInstruction..'\n\n'..baseSystemText
+  else
+    -- Note: The cheatengine.org proxy strips out input.system_instruction and replaces it with default text.
+    -- All system instructions, skill catalogs, and extra context must be injected directly into contents.
+    input.system_instruction = nil
+
+    if #input.contents == 0 then
+      newcontent.parts[1].text = '[Extra Instructions:\n' .. baseSystemText .. ']\n\n' .. message
+    end
+
+    if data.Extra then
+      newcontent.parts[#newcontent.parts + 1] = { text = data.Extra }
+      data.Extra = nil
+    end
+  end
+
+
+  table.insert(input.contents, newcontent)
+ 
     
 
   --load tools
@@ -485,12 +519,14 @@ x-goog-api-key: ]]..AIKEY
       data.allfullresponses={}
     end
     
+   -- print("sending query")   
 
     result=data.Internet.postURL(url, inputtext)
     local response
     local textresult=''
-    
+            
     while result do
+      --print("got a result")
       table.insert(data.allfullresponses,result)
       
       
@@ -510,74 +546,76 @@ x-goog-api-key: ]]..AIKEY
             data.Error=true
             textresult='Base error:'..parsed.error
           else
+            local modelTurn={
+              role='model',
+              parts={}
+            }
+            local currentTextPart=nil
+
             for i=1,#parsed do
               if parsed[i] then
-                if parsed[i].candidates then
-                  if parsed[i].candidates[1] then
-                    if parsed[i].candidates[1].content then
-                      local newcontent={}  
-                      table.insert(input.contents,newcontent)                      
-                      newcontent.role=parsed[i].candidates[1].content.role
-                     
-                      if parsed[i].candidates[1].content.parts then    
-                        newcontent.parts={}
-                        local parts=parsed[i].candidates[1].content.parts
+                if parsed[i].candidates and parsed[i].candidates[1] and parsed[i].candidates[1].content then
+                  local content=parsed[i].candidates[1].content
+                  if content.role then
+                    modelTurn.role=content.role
+                  end
 
-                        
-                        for j=1,#parts do
-                          newcontent.parts[j]={}
-                          newcontent.parts[j]=parts[j]
-                          --newcontent.parts[j].text=parts[j].text
-                          --newcontent.parts[j].functionCall=parts[j].functionCall
+                  if content.parts then
+                    for j=1,#content.parts do
+                      local p=content.parts[j]
+
+                      if p.text then
+                        textresult=textresult..p.text
+                        if currentTextPart then
+                          currentTextPart.text=currentTextPart.text..p.text
+                        else
+                          currentTextPart={text=p.text}
+                          table.insert(modelTurn.parts, currentTextPart)
+                        end
+                      else
+                        -- Non-text part (e.g. functionCall or thought)
+                        currentTextPart=nil -- reset so any subsequent text starts a fresh part
+                        table.insert(modelTurn.parts, p)
+
+                        if p.functionCall then
+                          --parse the args
+                          synchronize(function() 
+                            if data.self and data.self.mOutput then
+                              data.self.mOutput.lines.add(' *Calling function :'..p.functionCall.name..'* \n\r')
+                            end
+                          end)  
                           
-                          if parts[j].text then
-                            textresult=textresult..parts[j].text
+                          if response==nil then
+                            response={} --add it if needed
+                            response.role='user'
+                            response.parts={}
                           end
                           
-                          if parts[j].functionCall then
-                            --parse the args
-                            synchronize(function() 
-                              if data.self and data.self.mOutput then
-                                data.self.mOutput.lines.add(' *Calling function :'..parts[j].functionCall.name..'* \n\r')
-                                
-                              end
-                            end)  
-                            
-                            if response==nil then
-                              response={} --add it if needed
-                              response.role='user'
-                              response.parts={}
-                              
-                              --data.resultBeforeResponse=data.UnparsedResult
-                            end
-                            
-                            local tool=aitools[parts[j].functionCall.name]
-                            
-                            local r={}
-                            r.functionResponse={}
-                            r.functionResponse.name=parts[j].functionCall.name
-                            
-                            if tool then
-                              local f=tool.functionToCall
-                              if f then
-                                r.functionResponse.response=tool.functionToCall(parts[j].functionCall.args)                                                       
-                              else
-                                r.functionResponse.response={Error='Invalid config for '..parts[j].functionCall.name}
-                                synchronize(function() 
-                                  data.self.mOutput.lines.add('result: Invalid config')                            
-                                end)                                    
-                              end
+                          local tool=aitools[p.functionCall.name]
+                          
+                          local r={}
+                          r.functionResponse={}
+                          r.functionResponse.name=p.functionCall.name
+                          
+                          if tool then
+                            local f=tool.functionToCall
+                            if f then
+                              r.functionResponse.response=tool.functionToCall(p.functionCall.args)                                                       
                             else
-                              r.functionResponse.response={Error='Unknown function name'}
+                              r.functionResponse.response={Error='Invalid config for '..p.functionCall.name}
                               synchronize(function() 
-                                data.self.mOutput.lines.add('result: Unknown function')                            
-                              end)                              
+                                data.self.mOutput.lines.add('result: Invalid config')                            
+                              end)                                    
                             end
-                            table.insert(response.parts,r)
+                          else
+                            r.functionResponse.response={Error='Unknown function name'}
+                            synchronize(function() 
+                              data.self.mOutput.lines.add('result: Unknown function')                            
+                            end)                              
                           end
-                        end                        
+                          table.insert(response.parts,r)
+                        end
                       end
-                     
                     end
                   end
                 end
@@ -588,6 +626,11 @@ x-goog-api-key: ]]..AIKEY
                 end                
               end
             end
+
+            if #modelTurn.parts > 0 then
+              table.insert(input.contents, modelTurn)
+            end
+
           end
         end
         
@@ -617,6 +660,8 @@ x-goog-api-key: ]]..AIKEY
       end
     end
     
+    --print("result is nil now")
+    
     data.result=textresult
 
     if data.NotifyWhenDone then
@@ -631,7 +676,7 @@ x-goog-api-key: ]]..AIKEY
     if not data.WaitForData then
       data.thread=nil
     end
-   -- print("thread finished")    
+    print("thread finished")    
   end)
 
   if data.WaitForData then
@@ -769,6 +814,44 @@ function spawnAIDialog(command, extra) --command and extra are optional
     end 
 
     local message=f.mInput.Lines.Text
+    local trimmed=message:gsub('^%s+', ''):gsub('%s+$', '')
+    
+    if trimmed == '/skills' or trimmed == '/skill' then
+      f.mOutput.Lines.add('> '..message)
+      f.mInput.Lines.clear()
+      f.mOutput.Lines.add('=== Available Reverse Engineering Skills ===\n')
+      if skillsCatalog then
+        for name, sdata in pairs(skillsCatalog) do
+          f.mOutput.Lines.add('* ' .. name .. ': ' .. sdata.description)
+          if sdata.references and #sdata.references > 0 then
+            f.mOutput.Lines.add('    References: ' .. table.concat(sdata.references, ', '))
+          end
+        end
+      end
+      f.mOutput.Lines.add('\nType `/skill <name>` to view/activate a skill, or `/skill reload` to refresh from disk.\n')
+      return
+    elseif trimmed == '/skill reload' then
+      f.mOutput.Lines.add('> '..message)
+      f.mInput.Lines.clear()
+      local count = reloadSkills and reloadSkills() or 0
+      f.mOutput.Lines.add(string.format('Reloaded %d skills from disk.\n', count))
+      return
+    elseif trimmed:sub(1, 7) == '/skill ' then
+      local skillName = trimmed:sub(8):gsub('^%s+', ''):gsub('%s+$', '')
+      f.mOutput.Lines.add('> '..message)
+      f.mInput.Lines.clear()
+      if readSkillContent then
+        local res = readSkillContent(skillName)
+        if res.error then
+          f.mOutput.Lines.add('Error: ' .. res.error .. '\n')
+        else
+          f.mOutput.Lines.add('=== Skill Loaded: ' .. res.skill .. ' ===\n' .. (res.instructions or '') .. '\n')
+          data.Extra = (data.Extra and (data.Extra .. '\n\n') or '') .. '[User activated skill: ' .. res.skill .. ']\n' .. (res.instructions or '')
+        end
+      end
+      return
+    end
+
     f.mOutput.Lines.add('> '..f.mInput.Lines.Text)
     f.mInput.Lines.clear()
 

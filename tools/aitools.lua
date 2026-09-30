@@ -645,7 +645,7 @@ readFunctions['vtWord']=function(address) return readSmallInteger(address) end
 readFunctions['vtDword']=function(address) return readInteger(address) end
 readFunctions['vtQword']=function(address) return string.format("%x",readQword(address)) end
 readFunctions['vtSingle']=function(address) return readFloat(address) end
-readFunctions['vtDouble']=function(address) return readString(address) end
+readFunctions['vtDouble']=function(address) return readDouble(address) end
 
 local readSizes={}
 readSizes['vtByte']=1
@@ -771,12 +771,13 @@ function ai_createMemoryRecord(args)
     mr.description=description
     
     if args.script then
+      mr.VarType='vtAutoAssembler'    
       mr.Script=args.script
       
       if args.async then
         mr.Async=args.async
-      end 
-      mr.VarType='vtAutoAssembler'      
+      end
+            
     else
       if args.address then
         mr.Address=args.address
@@ -794,7 +795,7 @@ function ai_createMemoryRecord(args)
       end
       
       if args.offsets then
-        local i=1,#args.offsets do
+        for i=1,#args.offsets do
           mr.OffsetText[i-1]=args.offsets[i]
         end
       end       
