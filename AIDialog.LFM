@@ -76,7 +76,7 @@ object frmAIDialog: TCEForm
       Hint = 'The public CE API is just to give you a taste of the AI capabilities on the rare occasion the limit hasn''t been reached.  The limit it shared between ALL public api users. The chances of getting to it before the limit is reached are slim'#13#10#13#10'uses gemini-2.5-flash'
       Top = 0
       Width = 283
-      Caption = 'Public CE API (Extremely Limited)'
+      Caption = 'Public CE API (Limited)'
       Checked = True
       Font.Color = clWindowText
       ParentColor = False
@@ -91,11 +91,11 @@ object frmAIDialog: TCEForm
       AnchorSideLeft.Side = asrBottom
       Left = 291
       Height = 29
-      Hint = 'The Patreon CE API is similar to the public API, but has a slightly higher daily limit (still shared between all patreon members) You sometimes might even get a chance to use it.'#13#10#13#10'uses gemini-2.5-flash'
+      Hint = 'The Patreon CE API is similar to the public API, but has a shared paid token pool based on the number and type of subscribers. The patreon rank determines the level of models you can use'
       Top = 0
       Width = 216
       BorderSpacing.Left = 8
-      Caption = 'Patreon CE API (Limited)'
+      Caption = 'Patreon CE API'
       ParentColor = False
       ParentShowHint = False
       ShowHint = True
