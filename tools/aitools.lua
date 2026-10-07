@@ -1107,6 +1107,131 @@ function ai_setAutoAssemblerScript(args)
   return {status='success'}
 end
 
+function ai_executeLuaCode(args)
+  local script=args.script
+  local async=args.async
+  print("AI: Executing "..script)
+
+  local f,err=loadstring(script)
+
+  if f then
+    local r
+    if async then      
+      r=table.pack(pcall(f))
+    else
+      synchronize(function() --run it in the main thread
+        r=table.pack(pcall(f))
+      end)
+    end
+
+    if r then
+      if r[1] then
+        local v=''
+        for i=2,#r do
+          if i~=2 then
+            v=v..', '
+          end
+          v=v..tostringx(r[i])
+        end
+
+        return {result='true', returnedValues=v}
+      else
+        if r[2] then
+          return {result='false', error='script loaded, error:'..r[2]}
+        else
+          return {result='false', error='script loaded, unknown error'}
+        end
+
+      end
+    else
+      return {result='false', error='script loaded, but unknown execution error'}
+    end
+  else
+    return {result='false', error=err}
+  end
+end
+
+local docs
+function ai_initdocs()
+  if docs==nil then
+    docs=createStringlist()
+    if docs.loadFromFile(getCheatEngineDir()..'celua.txt')==false then
+      docs.destroy()
+      docs=nil
+    end
+  end
+
+  return docs~=nil
+end
+
+function ai_getLuaDocumentationByKeyword(args)
+  local keyword=args.keyword
+  local range=args.range or 2
+  if keyword==nil then
+    return {result='false', error='No keyword provided'}
+  end
+
+  if ai_initdocs() then
+    local results
+    if docs.search then
+      results=docs.search(keyword, range)
+    else
+      results={}
+      for i=0,docs.Count-1 do
+        local f=docs[i]     
+        if string.find(f:lower(),keyword,1,true) then
+          local block={}
+          for j=i-2,i+2 do
+            if j>=0 and j<docs.count then
+              local entry={}
+          
+              entry.lineNumber=j
+              entry.text=docs[j]
+              table.insert(block,entry)              
+            end
+          end
+
+          table.insert(results,block)
+        end
+      end
+    end
+    if #results then
+       return {status='success', results=results}
+    end
+  else
+    return {status='failure', error='document file failed to load'}
+  end  
+end
+
+function ai_getLuaDocumentationByLinenumber(args)
+  local linenr=args.linenr
+  local linecount=args.linecount
+  if ai_initdocs() then
+    if linenr<0 then
+      linenr=0
+    end
+
+    if linecount<0 then   
+      return {status='failure', error='negative linecount'}
+    end
+
+    if linecount>docs.Count then
+      linecount=docs.count
+    end
+    local results=createStringList()
+
+    for i=linenr,linenr+linecount-1 do
+      results.add(docs[i])
+    end
+    local r=results.text
+    results.destroy()
+    return {text=r}
+  else
+    return {status='failure', error='document file failed to load'}
+  end
+
+end
+
 
 registerAITool('getOpenedProcessName','Returns the currently opened processname. (the executable)', {},{},ai_getOpenedProcessName)
 registerAITool('openProcess','Opens the the most recent process with this name. Result is true on success and also provides the processID', {processname={type='STRING',description='name of the process to open'}},{"processname"},ai_openProcess)
@@ -1507,7 +1632,41 @@ registerAITool('getMemoryRecordByDescription',[[Returns a unique never changing 
                                           
 
 
---nuclear option (and halicinary):
---registerAITool('executeLuaCode','Execute any lua code inside the current Cheat Engine instance', {script},{},ai_executeCode)
+--nuclear option (and halucinary):
+registerAITool('executeLuaCode','Execute Cheat Engine lua code inside the current Cheat Engine instance. Returns result=true/false. On true, the return values of the script, on false the lua error',
+					--params
+					{
+						script={type='STRING', description='The script to execute'},						
+						async={type='BOOLEAN', description='Do not execute the code in the main GUI thread. Execute it in the AI tools thread instead. Default false'}
+					}
+					,
+					{ --required
+						script
+					}
+ 					,ai_executeLuaCode)
 
+registerAITool('getCELuaDocumentationByKeyword','Retrieves a part of the lua documentation based on the keyword. Returns multiple results if the keyword appears in multiple locations. The result also contains the linenumber which you can use with getLuaDocumentationByLine to search deeper',
+					--params
+					{
+						keyword={type='STRING', description='The keyword to look for'},
+						range={type='INTEGER', description='The number of lines before and after the keyword to return. Default is 2, meaning 5 lines'}	
+					}
+					,					
+					{ --required
+						keyword
+					}
+					,ai_getLuaDocumentationByKeyword)
+
+registerAITool('getCELuaDocumentationByLineNumber','Retrieves a part of the lua documentation based on the linenumber',
+					--params
+					{
+						linenr={type='INTEGER', description='The linenumber to start the read from'},
+						linecount={type='INTEGER', description='The number of lines to read'}
+					}
+					,
+					--required
+					{
+						linenr,linecount
+					}
+					,ai_getLuaDocumentationByLinenumber)
 
