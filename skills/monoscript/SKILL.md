@@ -181,14 +181,14 @@ end
 Initializes MonoDataCollector before executing the script. Always include this at the top of the `[ENABLE]` section:
 ```asm
 [ENABLE]
-USEMONO
+USEMONO()
 ```
 
 #### `FINDMONOMETHOD(DefineName, Namespace:ClassName:MethodName)`
 Compiles the target method and assigns its native address to `DefineName`:
 ```asm
 [ENABLE]
-USEMONO
+USEMONO()
 FINDMONOMETHOD(TakeDamageEntry, Assembly-CSharp:Player:TakeDamage)
 
 TakeDamageEntry:
@@ -202,7 +202,7 @@ Note though that FINDMONOMETHOD is obsolete and just referencing a symbol with t
 Generates an Auto Assembler structure representing the class layout:
 ```asm
 [ENABLE]
-USEMONO
+USEMONO()
 GETMONOSTRUCT(PlayerStruct, Assembly-CSharp:Player)
 
 // Fields can now be referenced symbolically:
