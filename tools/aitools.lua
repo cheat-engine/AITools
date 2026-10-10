@@ -706,14 +706,6 @@ function ai_readString(args)
   return {status='success', result=readString(address, charcount, widestring)}
 end
 
-function ai_showLuaScript(args)  
-  synchronize(function() 
-    local f=createLuaEngine()
-    f.mScript.Lines.Text=args.LuaScript or '' 
-    f.show()
-  end)
-  return {status='success'}  
-end
 
 function ai_showAutoAssemblerScript(args)  
   synchronize(function() 
@@ -1025,19 +1017,30 @@ function ai_writeAddress(args)
   end  
 end
 
+function ai_showLuaScript(args)
+  local luaenginename
+  synchronize(function() 
+    local f
+    if args.LuaScriptReference then
+      f=getApplication()[args.LuaScriptReference]
+    end
+    if f==nil then    
+      f=createLuaEngine()
+    end    
+    
+    f.mScript.Lines.Text=args.LuaScript or '' 
+    f.show()
+    luaenginename=f.Name
+  end)
+  return {status='success', LuaEngineReference=luaenginename}  
+end
+
 function ai_getLuaEngineScript(args)
-  local id=args.LuaEngineWindowID
-  local luaengine
-  if id and id~=0 then
-    luaengine=aiobjects[id]
-  else
-    luaengine=getLuaEngine()
-  end
+  local f=getApplication()[args.LuaEngineReference]
   
-  if luaengine==nil then
-    return {error='Invalid LuaEngineWindowID'}
-  end
-  
+  if f==nil then
+    return {error='Invalid LuaEngineReference'}
+  end 
   
   local script
   
@@ -1049,21 +1052,14 @@ function ai_getLuaEngineScript(args)
 end
 
 function ai_setLuaEngineScript(args)
-  local id=args.LuaEngineWindowID
-  local script=args.script
-  local luaengine
-  if id and id~=0 then
-    luaengine=aiobjects[id]
-  else
-    luaengine=getLuaEngine()
-  end
+  local f=getApplication()[args.LuaEngineReference]
   
-  if luaengine==nil then
-    return {error='Invalid LuaEngineWindowID'}
-  end
+  if f==nil then
+    return {error='Invalid LuaEngineReference'}
+  end 
   
   synchronize(function()
-    luaengine.mscript.lines.text=script
+    f.mscript.lines.text=script
   end)  
   return {status='success'}
 end
@@ -1107,6 +1103,8 @@ function ai_setAutoAssemblerScript(args)
   return {status='success'}
 end
 
+
+
 function ai_executeLuaCode(args)
   local script=args.script
   local async=args.async
@@ -1115,6 +1113,15 @@ function ai_executeLuaCode(args)
   local f,err=loadstring(script)
 
   if f then
+    local ai_origprint
+    local ai_printlog=''
+
+    ai_origprint=print      
+    print=function(...)
+      local r=ai_origprint(...)
+      ai_printlog=ai_printlog..r..'\n'  
+    end
+
     local r
     if async then      
       r=table.pack(pcall(f))
@@ -1123,6 +1130,9 @@ function ai_executeLuaCode(args)
         r=table.pack(pcall(f))
       end)
     end
+    
+    print=ai_origprint      
+     
 
     if r then
       if r[1] then
@@ -1134,7 +1144,7 @@ function ai_executeLuaCode(args)
           v=v..tostringx(r[i])
         end
 
-        return {result='true', returnedValues=v}
+        return {result='true', returnedValues=v, printlog=ai_printlog}
       else
         if r[2] then
           return {result='false', error='script loaded, error:'..r[2]}
@@ -1443,21 +1453,21 @@ registerAITool('readString', [[Reads a string of memory from a memory address]],
                
 
                
-registerAITool('showLuaScript',[[Opens a lua engine window and inserts the provided lua script in the editor field]],{LuaScript={type='STRING', description='The script to show in the editor section)'}},{'LuaScript'},ai_showLuaScript)                                         
+registerAITool('showLuaScript',[[Opens a new Lua engine window and inserts the provided Lua script in the editor field. It returns a LuaEngineReference you can use with setLuaEngineScript]],{LuaScript={type='STRING', description='The script to show in the editor section'}},{'LuaScript'},ai_showLuaScript)                                         
 
 registerAITool('getLuaEngineScript',[[retrieves the lua script from a specific lua engine window]],
                                                   {
-                                                    LuaEngineWindowID={type='INTEGER', description='The identifier of the lua engine window.  If not provided WindowID will be 0, which is the default Lua Engine window'}
+                                                    LuaEngineReference={type='STRING', description='The unique identifier of the Lua engine window'}
                                                   },
-                                                  {},--
+                                                  {'LuaEngineReference'},--
                                                   ai_getLuaEngineScript)
 
 registerAITool('setLuaEngineScript',[[sets the lua script in a specific lua engine window]],
                                                   {
-                                                    LuaEngineWindowID={type='INTEGER', description='The identifier of the lua engine window.  If not provided WindowID will be 0, which is the default Lua Engine window'},
+                                                    LuaEngineReference={type='INTEGER', description='The identifier of the lua engine window.  If not provided WindowID will be 0, which is the default Lua Engine window'},
                                                     script={type='STRING', description='The new lua script'}
                                                   },
-                                                  {'script'},
+                                                  {'LuaEngineReference','script'},
                                                   ai_setLuaEngineScript)
 
 
@@ -1633,7 +1643,7 @@ registerAITool('getMemoryRecordByDescription',[[Returns a unique never changing 
 
 
 --nuclear option (and halucinary):
-registerAITool('executeLuaCode','Execute Cheat Engine lua code inside the current Cheat Engine instance. Returns result=true/false. On true, the return values of the script, on false the lua error',
+registerAITool('executeLuaCode','Execute Cheat Engine Lua code inside the current Cheat Engine instance. Returns result=true/false. On true, the return values of the script, on false the lua error.  It also returns the print and printf results',
 					--params
 					{
 						script={type='STRING', description='The script to execute'},						

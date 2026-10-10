@@ -257,7 +257,10 @@ Once `LaunchMonoDataCollector()` is active, Cheat Engine registers:
 | Task | Primary Function | Secondary / Alternative |
 | :--- | :--- | :--- |
 | **Connect** | `LaunchMonoDataCollector()` | `getMonoPipe()`, `mono_isValid()` |
+| **Enum Images** | `mono_enumImagesEx()` | Returns a table of each image. Each entry contains the imagehandle and name of the image |
+| **Enum Classes** | `mono_image_enumClassesEx(imagehandle)` | Returns a list of all the classnames and classhandles and some other basic information |
 | **Class Query** | `mono_findClass("Namespace.Class")` | `mono_findClass2(fullName, assembly)` |
+| **Enum Methods** | `mono_class_enumMethods(classhandle, includeParents:BOOLEAN)` | Returns a list of all the methods and their methodhandles, and other information |
 | **Method Query** | `mono_class_findMethod(class, name)` | `mono_findMethod(namespace, class, method, params)` |
 | **JIT Compile** | `mono_compile_method(method)` | Native entry point address returned |
 | **Field Info** | `mono_class_enumFields(class, true)` | Returns table of `{name, offset, isStatic, ...}` |
