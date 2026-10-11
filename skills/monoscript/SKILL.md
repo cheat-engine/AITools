@@ -6,6 +6,7 @@ description: Cheat Engine Mono and Unity IL2CPP runtime scripting, reverse engin
 # Cheat Engine MonoScript Skill (`monoscript.lua`)
 
 The `monoscript` skill enables AI agents to reverse engineer, inspect, hook, and manipulate applications and games built with the **Mono runtime** (e.g., Unity Mono, standalone .NET Mono) or **Unity IL2CPP** via Cheat Engine's `autorun/monoscript.lua` and injected **MonoDataCollector**.
+The monodatacollector*.dll/.so is injected in both il2cpp and mono targets and adjust accordingly to the state it is in
 
 ---
 
