@@ -1269,7 +1269,7 @@ registerAITool('scanMemory','Scan for a value and get a scannerID. This scannerI
                                                         - vtGrouped: a cheat engine groupscan formatted string
                                                         - vtByteArray: A sequence of hex bytes (AOB)
                                                         - vtBinary: Scans for the given value's binary value inside the memory. Best used for big values that take up at least 1 byte
-                                                        - vtAll: Scans the most common types at the same time (vtDword, vtSingle, vtDouble)]]
+                                                        - vtAll: Scans the most common types at the same time (vtDword, vtSingle, vtDouble) Best option when 4 byte doesn't find it]]
                                                       },
                                               alignment={type='INTEGER', description='What memory alignment should be used. Default is 4'}
                                               },

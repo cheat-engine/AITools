@@ -56,8 +56,6 @@ else
 end
 ```
 
-> [!TIP]
-> If a Cheat Engine table has `UsesMono` enabled, Cheat Engine will auto-launch the collector on process attach.
 
 ---
 
