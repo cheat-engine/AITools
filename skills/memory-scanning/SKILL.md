@@ -28,7 +28,7 @@ Selecting the incorrect data type is the most common cause of failed scans:
 | :--- | :--- | :--- |
 | **Visible Integers** (Ammo, Coins, Level, Inventory Count) | `vtDword` (4-byte integer) | Default for almost all 32-bit and 64-bit game engines. |
 | **Counters / Small values** (< 255 or < 65535) | `vtByte` (1-byte) or `vtWord` (2-byte) | Rarely used for primary stats, but common in retro/indie games and flags. |
-| **Smooth / Animated HUD** (Health bars, Mana, Energy, Stamina) | `vtSingle` (4-byte Float) | Smooth progress bars almost always interpolate floats between `0.0f` and `100.0f` or `1.0f`. |
+| **Smooth / Animated HUD** (Health bars, Mana, Energy, Stamina) | `vtSingle` (4-byte Float) or `vtAll` (All) | Smooth progress bars almost always interpolate floats between `0.0f` and `100.0f` or `1.0f`. |
 | **Physics & Coordinates** (Position X/Y/Z, Velocity, Speed, Angles) | `vtSingle` (Float) or `vtDouble` (Double) | World space coordinates in 3D games are IEEE 754 floats. UE5 games with Large World Coordinates use Doubles. |
 | **Massive RPG Currency** (> 2 billion) | `vtQword` (8-byte integer) or `vtDouble` | Used to prevent 32-bit integer overflow. |
 | **Text / Names** (Character names, dialogue) | `vtString` or `vtWideString` | ASCII/UTF-8 vs UTF-16 (Windows native). |

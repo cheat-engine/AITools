@@ -7,7 +7,8 @@ description: Cheat Engine Mono and Unity IL2CPP runtime scripting, reverse engin
 
 The `monoscript` skill enables AI agents to reverse engineer, inspect, hook, and manipulate applications and games built with the **Mono runtime** (e.g., Unity Mono, standalone .NET Mono) or **Unity IL2CPP** via Cheat Engine's `autorun/monoscript.lua` and injected **MonoDataCollector**.
 Even IL2CPP targets get injected with the monodatacollector library and they will adjust accordingly to their environment
-
+When the monodatacollector is attached to an IL2CPP target, it will spawn a thread that will enumerate all methods and their entry points and stores them in a symbollist used by Cheat Engine's symbol handler
+The symbolhandler will parse .net formatted strings to find the method or field.  If it is a field, it will return the static field, or the field offset if it is not a static address 
 ---
 
 ## When to Use This Skill
@@ -238,14 +239,14 @@ end
 Initializes MonoDataCollector before executing the script. Always include this at the top of the `[ENABLE]` section:
 ```asm
 [ENABLE]
-USEMONO
+USEMONO()
 ```
 
 #### `FINDMONOMETHOD(DefineName, Namespace:ClassName:MethodName)`
 Compiles the target method and assigns its native address to `DefineName`:
 ```asm
 [ENABLE]
-USEMONO
+USEMONO()
 FINDMONOMETHOD(TakeDamageEntry, Assembly-CSharp:Player:TakeDamage)
 
 TakeDamageEntry:
@@ -259,7 +260,7 @@ Note though that FINDMONOMETHOD is obsolete and just referencing a symbol with t
 Generates an Auto Assembler structure representing the class layout:
 ```asm
 [ENABLE]
-USEMONO
+USEMONO()
 GETMONOSTRUCT(PlayerStruct, Assembly-CSharp:Player)
 
 // Fields can now be referenced symbolically:
@@ -276,6 +277,28 @@ Once `LaunchMonoDataCollector()` is active, Cheat Engine registers:
    - `Player:health` -> Resolves to field offset or static memory address.
 2. **Address Lookups**: Disassembly displays names automatically:
    - `Assembly-CSharp:Player:TakeDamage+14` appears in memory view instead of bare addresses.
+
+---
+
+### 10. Inspecting & Navigating `.NET Info` (`dotnetinfo.lua`)
+
+Cheat Engine provides the `.NET Info` window (`frmDotNetInfo`) for exploring domains, images, classes, methods, and fields.
+
+#### Delay-Loaded Class Lists
+- `Image.Classes` is fetched asynchronously in a background worker thread (`ClassFetchThread`).
+- While fetching, `Image.Classes.Busy` is `true`. Do not attempt to read or index `Image.Classes` until `Image.Classes` is non-nil and `not Image.Classes.Busy`.
+- In virtual ListViews (`lvClasses.OwnerData = true`), item count is driven by `lvClasses.Items.Count = #Image.Classes` and captions are fetched on demand via `OnData`.
+
+#### Single-Domain UI Behavior
+- If the target process has only 1 domain, `frmDotNetInfo.lbDomains` is hidden (`Visible = false`) and `lbImages` is already populated with the images for that domain.
+
+#### Scrolling Items into View
+- On Cheat Engine `TListItem` objects, call `item.makeVisible(false)` to scroll the selected class or member into view.
+
+#### Handling `libmono.abort`
+- If an unhandled error occurs during data collector attachment, `libmono.abort` is set to `true`.
+- When `libmono.abort == true`, all Mono functions (`mono_image_enumClassesEx`, `mono_enumDomains`, etc.) return `nil` immediately.
+- To recover, reset `libmono.abort = false` before retrying Mono queries.
 
 ---
 
@@ -306,6 +329,45 @@ Once `LaunchMonoDataCollector()` is active, Cheat Engine registers:
      LaunchMonoDataCollector()
    end)
    ```
+
+---
+
+## Runtime Invocation & JIT Invariants
+
+### Never Invoke Open Generic Method Definitions
+> [!CAUTION]
+> Invoking an open (uninflated) generic method definition via `mono_invoke_method()` or `mono_runtime_invoke()` causes the Mono JIT compiler inside the target process to abort immediately:
+> `* Assertion at method-to-ir.c:7384, condition '!sig->has_type_parameters' not met` (`SIGABRT`, exit code 134).
+
+When resolving methods by name and parameter count (e.g., via `mono_class_enumMethods`):
+1. **Detect Open Generics**: Inspect the method signature using `mono_method_getSignature(method)`. Check whether the return type is `'T'`, `'T[]'`, or contains generic indicators (`` ` ``, `!`).
+2. **Handle Overloads**: In classes with both generic and non-generic overloads (such as `UnityEngine.Object.FindObjectsOfType`), generic methods like `FindObjectsOfType<T>(bool)` can match a 1-parameter count filter and precede `FindObjectsOfType(Type)` in metadata order. Always verify the parameter types or return type before invoking.
+3. **Inflate Concrete Generics**: If you need to invoke a generic method, inflate it with concrete type arguments first using `mono_method_inflate(method, typeArgs)`.
+
+---
+
+## Unity Engine Discovery & Scene Architecture
+
+### 2D vs 3D Game Object Parity
+Unity games use the **exact same** internal data structures (`GameObject`, `Transform`, `Component`, `Scene`) regardless of whether the gameplay is 2D or 3D. 2D games simply employ 2D physics colliders (`BoxCollider2D`), `SpriteRenderer`, and orthographic camera projections attached to standard `GameObject` nodes.
+
+### Scene Struct Properties & Internal Calls
+In `UnityEngine.SceneManagement.Scene`, property getters (`name`, `isLoaded`, `rootCount`) are wrappers around static C++ engine calls:
+- `Scene.GetNameInternal(int sceneHandle)`
+- `Scene.GetIsLoadedInternal(int sceneHandle)`
+- `Scene.GetRootCountInternal(int sceneHandle)`
+
+Passing an unboxed `Scene` struct buffer (`mono_struct_createBuffer`) to instance getters will fail or return invalid data. Always pass the raw integer scene handle (`m_Handle`) directly to the static internal methods.
+
+### Resilient Native GameObject Query Pipeline
+In production Unity builds, root GameObjects are frequently not rooted in Mono GC statics, causing managed GC walks or `mono_class_findInstancesFast` to return 0 roots. To reliably discover all GameObjects:
+1. **Native Engine Queries**:
+   - `UnityEngine.Object.FindObjectsOfType(Type, bool)` (Unity 5.6+ 2-parameter overload: `type`, `includeInactive`).
+   - `UnityEngine.Resources.FindObjectsOfTypeAll(Type)`: Interrogates the native C++ engine registry directly, discovering both active and inactive objects across scenes and asset domains in a single call (<50ms).
+2. **Root Hierarchy Identification**:
+   - Query all `Transform` instances and filter for `transform.parent == nil`.
+   - Resolve the owning scene handle via `unity.getGameObjectSceneHandle(go)` (`gameObject.scene.handle`).
+   - Group objects with persistent scene handles (e.g. negative handles like `-12`) under `DontDestroyOnLoad`.
 
 ---
 
