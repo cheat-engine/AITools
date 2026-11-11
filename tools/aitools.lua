@@ -271,7 +271,7 @@ function ai_getResultsAndValues(args) --startindex, count
 end
 
 function ai_startWatchpoint(args)
-  local address=args.address
+  local address=getAddressSafe(args.address)
   local watchsize=args.watchsize or 1
   local watchtype=_G[args.watchtype] or bptAccess  
   
@@ -555,7 +555,7 @@ function ai_disassembleRange(args)
 end
 
 function ai_disassembleSingleInstruction(args)
-  local r=ai_disassembleRange({startAddress=args.address, stopAddress=args.address, showSymbols=args.showSymbols, showModules=args.showModules, showSections=args.showSections})
+  local r=ai_disassembleRange({startAddress=getAddressSafe(args.address), stopAddress=getAddressSafe(args.address), showSymbols=args.showSymbols, showModules=args.showModules, showSections=args.showSections})
   if r and r.status=='success' and r.result[1] then
     local r2=r.result[1]
     return {status='success',result=r2}
