@@ -11,6 +11,7 @@ object frmAIDialog: TCEForm
   DoubleBuffered = True
   ParentDoubleBuffered = False
   OnCloseQuery = frmAIDialog_FormCloseQuery
+  Menu = MainMenu1
   object gbAPIKey: TCEGroupBox
     AnchorSideLeft.Control = Owner
     AnchorSideTop.Control = Owner
@@ -812,6 +813,21 @@ object frmAIDialog: TCEForm
       Width = 960
       Align = alBottom
       ResizeAnchor = akBottom
+    end
+  end
+  object MainMenu1: TMainMenu
+    Left = 16
+    Top = 16
+    object miFile: TMenuItem
+      Caption = '&File'
+      object miSaveSession: TMenuItem
+        Caption = '&Save Session...'
+        ShortCut = 16467
+      end
+      object miRestoreSession: TMenuItem
+        Caption = '&Restore Session...'
+        ShortCut = 16463
+      end
     end
   end
 end

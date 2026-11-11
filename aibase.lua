@@ -1469,11 +1469,413 @@ local function applyAndSaveKey(f)
   end
 end
 
+local function safeExtractFileName(filePath)
+  if extractFileName then
+    local res = extractFileName(filePath)
+    if res and res ~= '' then return res end
+  end
+  return filePath:match("([^/\\]+)$") or filePath
+end
+
+local function safeTranslate(text)
+  if translate then return translate(text) end
+  return text
+end
+
+local function deepCopy(orig)
+  local orig_type = type(orig)
+  local copy
+  if orig_type == 'table' then
+    copy = {}
+    for orig_key, orig_value in next, orig, nil do
+      copy[deepCopy(orig_key)] = deepCopy(orig_value)
+    end
+  else
+    copy = orig
+  end
+  return copy
+end
+
+local function extractCanonicalMessages(history)
+  local messages = {}
+  if not history or type(history) ~= 'table' then return messages end
+
+  if history.openai_messages and type(history.openai_messages) == 'table' then
+    for _, m in ipairs(history.openai_messages) do
+      if type(m) == 'table' and m.role and m.role ~= 'system' then
+        local contentStr = ''
+        if type(m.content) == 'string' then
+          contentStr = m.content
+        elseif m.content ~= nil then
+          pcall(function() contentStr = jsonparser.encode(m.content) end)
+        end
+        table.insert(messages, { role = m.role, content = contentStr })
+      end
+    end
+  elseif history.anthropic_messages and type(history.anthropic_messages) == 'table' then
+    for _, m in ipairs(history.anthropic_messages) do
+      if type(m) == 'table' and m.role then
+        local contentStr = ''
+        if type(m.content) == 'string' then
+          contentStr = m.content
+        elseif type(m.content) == 'table' then
+          local parts = {}
+          for _, block in ipairs(m.content) do
+            if type(block) == 'table' and block.text then
+              table.insert(parts, block.text)
+            end
+          end
+          contentStr = table.concat(parts, '\n')
+        elseif m.content ~= nil then
+          pcall(function() contentStr = jsonparser.encode(m.content) end)
+        end
+        table.insert(messages, { role = m.role, content = contentStr })
+      end
+    end
+  elseif history.contents and type(history.contents) == 'table' then
+    for _, item in ipairs(history.contents) do
+      if type(item) == 'table' and item.role then
+        local role = (item.role == 'model') and 'assistant' or 'user'
+        local partsText = {}
+        if item.parts and type(item.parts) == 'table' then
+          for _, p in ipairs(item.parts) do
+            if type(p) == 'table' and p.text then
+              table.insert(partsText, p.text)
+            end
+          end
+        end
+        table.insert(messages, { role = role, content = table.concat(partsText, '\n') })
+      end
+    end
+  end
+  return messages
+end
+
+function saveSession(form, data, filename)
+  if not form then return false end
+  if type(data) == 'string' and filename == nil then
+    filename = data
+    data = nil
+  end
+  if (data == nil or type(data) ~= 'table') and form.Tag and form.Tag ~= 0 then
+    local ok, ref = pcall(getRef, form.Tag)
+    if ok and type(ref) == 'table' then
+      data = ref
+    end
+  end
+  data = data or {}
+
+  if not filename or filename == '' then
+    local sd = createSaveDialog(form)
+    sd.Title = safeTranslate('Save AI Session')
+    sd.DefaultExt = 'ceai'
+    sd.Filter = safeTranslate('AI Session files (*.ceai)|*.ceai|JSON files (*.json)|*.json|All files (*.*)|*.*')
+    sd.FilterIndex = 1
+    sd.Options = '[ofEnableSizing,ofOverwritePrompt]'
+    if not sd.execute() then
+      sd.destroy()
+      return false
+    end
+    filename = sd.FileName
+    sd.destroy()
+  end
+
+  if not filename or filename == '' then return false end
+
+  -- Determine access mode: 0=Public, 1=Patreon, 2=Private
+  local accessMode = 0
+  if form.rbAIAccessPatreon and form.rbAIAccessPatreon.Checked then
+    accessMode = 1
+  elseif form.rbAIAccessPrivate and form.rbAIAccessPrivate.Checked then
+    accessMode = 2
+  end
+
+  local providerName = (form.cbCustomProvider and form.cbCustomProvider.Text) or CustomProvider or 'OpenAI'
+  local endpointUrl = (form.edtCustomEndpoint and form.edtCustomEndpoint.Text) or CustomEndpoint or ''
+  local modelName = (form.cbModelSelection and form.cbModelSelection.Text) or (s and s.DefaultModel) or ''
+
+  local rawHistory = data.history and deepCopy(data.history) or {}
+  local canonicalMessages = extractCanonicalMessages(rawHistory)
+
+  local sessionData = {
+    version = 1,
+    type = 'ce_ai_session',
+    savedAt = os.date('!%Y-%m-%dT%H:%M:%SZ'),
+    settings = {
+      aiAccess = accessMode,
+      provider = providerName,
+      endpoint = endpointUrl,
+      model = modelName
+    },
+    extra = data.Extra or '',
+    input = (form.mInput and form.mInput.Lines and form.mInput.Lines.Text) or '',
+    output = (form.mOutput and form.mOutput.Lines and form.mOutput.Lines.Text) or '',
+    history = rawHistory,
+    messages = canonicalMessages
+  }
+
+  local encoded
+  local ok, err = pcall(function()
+    encoded = jsonparser.encode(sessionData)
+  end)
+
+  if not ok or not encoded then
+    messageDialog(safeTranslate('Error serializing session data: ') .. tostring(err), mtError, mbOK)
+    return false
+  end
+
+  local f, ioErr = io.open(filename, 'w')
+  if not f then
+    messageDialog(safeTranslate('Error opening file for write: ') .. tostring(ioErr), mtError, mbOK)
+    return false
+  end
+
+  f:write(encoded)
+  f:close()
+
+  if form.mOutput and form.mOutput.Lines then
+    local shortName = safeExtractFileName(filename)
+    form.mOutput.Lines.add('\n*[Session saved to ' .. shortName .. ']*\n')
+    if form.mOutput.SelStart then
+      form.mOutput.SelStart = #form.mOutput.Lines.Text
+    end
+  end
+
+  return true, filename
+end
+
+function restoreSession(form, data, filename)
+  if not form then return false end
+  if type(data) == 'string' and filename == nil then
+    filename = data
+    data = nil
+  end
+  if (data == nil or type(data) ~= 'table') and form.Tag and form.Tag ~= 0 then
+    local ok, ref = pcall(getRef, form.Tag)
+    if ok and type(ref) == 'table' then
+      data = ref
+    end
+  end
+  data = data or {}
+
+  if not filename or filename == '' then
+    local od = createOpenDialog(form)
+    od.Title = safeTranslate('Restore AI Session')
+    od.DefaultExt = 'ceai'
+    od.Filter = safeTranslate('AI Session files (*.ceai)|*.ceai|JSON files (*.json)|*.json|All files (*.*)|*.*')
+    od.FilterIndex = 1
+    od.Options = '[ofEnableSizing,ofFileMustExist]'
+    if not od.execute() then
+      od.destroy()
+      return false
+    end
+    filename = od.FileName
+    od.destroy()
+  end
+
+  if not filename or filename == '' then return false end
+
+  local f, ioErr = io.open(filename, 'r')
+  if not f then
+    messageDialog(safeTranslate('Error opening file for read: ') .. tostring(ioErr), mtError, mbOK)
+    return false
+  end
+
+  local content = f:read('*all')
+  f:close()
+
+  if not content or content == '' then
+    messageDialog(safeTranslate('Session file is empty.'), mtError, mbOK)
+    return false
+  end
+
+  local sessionData
+  local ok, err = pcall(function()
+    sessionData = jsonparser.decode(content)
+  end)
+
+  if not ok or type(sessionData) ~= 'table' then
+    messageDialog(safeTranslate('Invalid session file format: ') .. tostring(err), mtError, mbOK)
+    return false
+  end
+
+  -- Restore transcript output
+  if form.mOutput and form.mOutput.Lines then
+    local outText = sessionData.output or sessionData.transcript or ''
+    form.mOutput.Lines.Text = outText
+    if form.mOutput.SelStart then
+      form.mOutput.SelStart = #outText
+    end
+  end
+
+  -- Restore draft input
+  if form.mInput and form.mInput.Lines and sessionData.input ~= nil then
+    form.mInput.Lines.Text = sessionData.input
+  end
+
+  -- Restore prompt extra (skills, reverse engineering context)
+  if sessionData.extra ~= nil then
+    data.Extra = sessionData.extra
+  end
+
+  -- Restore settings if present
+  if sessionData.settings and type(sessionData.settings) == 'table' then
+    local st = sessionData.settings
+
+    -- Access mode (0=Public, 1=Patreon, 2=Private)
+    if st.aiAccess ~= nil then
+      if st.aiAccess == 0 and form.rbAIAccessPublic then
+        form.rbAIAccessPublic.Checked = true
+      elseif st.aiAccess == 1 and form.rbAIAccessPatreon then
+        form.rbAIAccessPatreon.Checked = true
+      elseif st.aiAccess == 2 and form.rbAIAccessPrivate then
+        form.rbAIAccessPrivate.Checked = true
+      end
+    end
+
+    -- Provider
+    if st.provider and form.cbCustomProvider then
+      local pIdx = form.cbCustomProvider.Items.indexOf(st.provider)
+      if pIdx ~= -1 then
+        form.cbCustomProvider.ItemIndex = pIdx
+      else
+        form.cbCustomProvider.Items.add(st.provider)
+        form.cbCustomProvider.ItemIndex = form.cbCustomProvider.Items.Count - 1
+      end
+      form.cbCustomProvider.Text = st.provider
+      CustomProvider = st.provider
+    end
+
+    -- Endpoint
+    if st.endpoint and form.edtCustomEndpoint then
+      form.edtCustomEndpoint.Text = st.endpoint
+      CustomEndpoint = st.endpoint
+    end
+
+    -- Model
+    if st.model and form.cbModelSelection then
+      local mIdx = form.cbModelSelection.Items.indexOf(st.model)
+      if mIdx ~= -1 then
+        form.cbModelSelection.ItemIndex = mIdx
+      else
+        form.cbModelSelection.Items.add(st.model)
+        form.cbModelSelection.ItemIndex = form.cbModelSelection.Items.Count - 1
+      end
+      form.cbModelSelection.Text = st.model
+    end
+  end
+
+  -- Restore and cross-normalize conversation history
+  data.history = sessionData.history and deepCopy(sessionData.history) or {}
+  local canonical = sessionData.messages
+  if (not canonical or #canonical == 0) and data.history then
+    canonical = extractCanonicalMessages(data.history)
+  end
+
+  if canonical and #canonical > 0 then
+    -- Ensure openai_messages exists
+    if not data.history.openai_messages or #data.history.openai_messages == 0 then
+      data.history.openai_messages = {}
+      for _, m in ipairs(canonical) do
+        if m.role == 'user' or m.role == 'assistant' or m.role == 'system' then
+          table.insert(data.history.openai_messages, {
+            role = m.role,
+            content = m.content or ''
+          })
+        end
+      end
+    end
+
+    -- Ensure anthropic_messages exists
+    if not data.history.anthropic_messages or #data.history.anthropic_messages == 0 then
+      data.history.anthropic_messages = {}
+      for _, m in ipairs(canonical) do
+        if m.role == 'user' or m.role == 'assistant' then
+          table.insert(data.history.anthropic_messages, {
+            role = m.role,
+            content = m.content or ''
+          })
+        end
+      end
+    end
+
+    -- Ensure contents (Gemini) exists
+    if not data.history.contents or #data.history.contents == 0 then
+      data.history.contents = {}
+      for _, m in ipairs(canonical) do
+        if m.role == 'user' or m.role == 'assistant' then
+          table.insert(data.history.contents, {
+            role = (m.role == 'assistant') and 'model' or 'user',
+            parts = { { text = m.content or '' } }
+          })
+        end
+      end
+    end
+  end
+
+  if form.mOutput and form.mOutput.Lines then
+    local shortName = safeExtractFileName(filename)
+    form.mOutput.Lines.add('\n*[Session restored from ' .. shortName .. ']*\n')
+    if form.mOutput.SelStart then
+      form.mOutput.SelStart = #form.mOutput.Lines.Text
+    end
+  end
+
+  return true, filename
+end
+
 function spawnAIDialog(command, extra) --command and extra are optional
   local animator
   local data={}
 
   local f=createFormFromFile(basepath..'AIDialog.LFM')  
+
+  -- Menu initialization and session handlers
+  if f.MainMenu1 == nil and f.Menu == nil then
+    f.MainMenu1 = createMainMenu(f)
+    f.Menu = f.MainMenu1
+  end
+  local mm = f.Menu or f.MainMenu1
+  if f.miFile == nil and mm then
+    f.miFile = createMenuItem(mm)
+    f.miFile.Name = 'miFile'
+    f.miFile.Caption = safeTranslate('&File')
+    mm.Items.add(f.miFile)
+  end
+  if f.miSaveSession == nil and f.miFile then
+    f.miSaveSession = createMenuItem(mm)
+    f.miSaveSession.Name = 'miSaveSession'
+    f.miSaveSession.Caption = safeTranslate('&Save Session...')
+    f.miSaveSession.Shortcut = 'Ctrl+S'
+    f.miFile.add(f.miSaveSession)
+  end
+  if f.miRestoreSession == nil and f.miFile then
+    f.miRestoreSession = createMenuItem(mm)
+    f.miRestoreSession.Name = 'miRestoreSession'
+    f.miRestoreSession.Caption = safeTranslate('&Restore Session...')
+    f.miRestoreSession.Shortcut = 'Ctrl+O'
+    f.miFile.add(f.miRestoreSession)
+  end
+
+  if f.miSaveSession then
+    f.miSaveSession.OnClick = function(sender)
+      saveSession(f, data)
+    end
+  end
+
+  if f.miRestoreSession then
+    f.miRestoreSession.OnClick = function(sender)
+      restoreSession(f, data)
+    end
+  end
+
+  f.saveSession = function(filename)
+    return saveSession(f, data, filename)
+  end
+
+  f.restoreSession = function(filename)
+    return restoreSession(f, data, filename)
+  end
   
   local function startAnimator()
     if animator==nil then

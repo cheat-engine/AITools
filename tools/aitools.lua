@@ -1242,6 +1242,23 @@ function ai_getLuaDocumentationByLinenumber(args)
 
 end
 
+function ai_wait(args)
+  local t=args.timeToSleep
+  
+  if t then
+    --todo: use a timer instead so the user can interrupt
+    local start=getTickCount()
+    sleep(t)
+    local stop=getTickCount()   
+    
+    return {status='success', result='waited for '..stop-start..' milliseconds'}  
+    
+  else
+    return {status='failure', error='timeToSleep was not provided'}  
+  end
+
+end
+
 
 registerAITool('getOpenedProcessName','Returns the currently opened processname. (the executable)', {},{},ai_getOpenedProcessName)
 registerAITool('openProcess','Opens the the most recent process with this name. Result is true on success and also provides the processID', {processname={type='STRING',description='name of the process to open'}},{"processname"},ai_openProcess)
@@ -1639,10 +1656,10 @@ registerAITool('editMemoryRecord',[[edits an existing memory record identified b
 registerAITool('getMemoryRecordByDescription',[[Returns a unique never changing memoryRecordID with the given description/name]],{description={type='STRING', description='The description of the memory record to look for'}},{'description'},ai_getMemoryRecordByDescription)
                                                
 
-                                          
+registerAITool('wait',[[Waits a specific amount of time in milliseconds outside of the main thread. Use this if you need to wait for an event]],{timeToSleep={type='INTEGER', description='The number of milliseconds to wait'}},{'timeToSleep'},ai_wait)
+                                        
 
 
---nuclear option (and halucinary):
 registerAITool('executeLuaCode','Execute Cheat Engine Lua code inside the current Cheat Engine instance. Returns result=true/false. On true, the return values of the script, on false the lua error.  It also returns the print and printf results',
 					--params
 					{
