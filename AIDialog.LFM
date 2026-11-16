@@ -208,9 +208,58 @@ object frmAIDialog: TCEForm
       Text = 'gemini-2.5-flash'
     end
   end
-  object gbOptions: TCEGroupBox
+  object gbThinkingLevel: TCEGroupBox
     AnchorSideLeft.Control = gbModelSelection
     AnchorSideTop.Control = gbModelSelection
+    AnchorSideTop.Side = asrBottom
+    AnchorSideRight.Control = gbModelSelection
+    AnchorSideRight.Side = asrBottom
+    Left = 962
+    Height = 81
+    Top = 164
+    Width = 270
+    Anchors = [akTop, akLeft, akRight]
+    AutoSize = True
+    BorderSpacing.Top = 2
+    Caption = 'Thinking Level'
+    ClientHeight = 55
+    ClientWidth = 264
+    ParentBackground = False
+    ParentFont = False
+    TabOrder = 4
+    object cbThinkingLevel: TCEComboBox
+      AnchorSideLeft.Control = gbThinkingLevel
+      AnchorSideLeft.Side = asrCenter
+      AnchorSideTop.Control = gbThinkingLevel
+      AnchorSideRight.Control = gbThinkingLevel
+      AnchorSideRight.Side = asrBottom
+      Left = 4
+      Height = 26
+      Top = 6
+      Width = 256
+      Anchors = [akTop, akRight]
+      BorderSpacing.Left = 4
+      BorderSpacing.Top = 6
+      BorderSpacing.Right = 4
+      BorderSpacing.Bottom = 12
+      ItemHeight = 18
+      ItemIndex = 0
+      Items.Strings = (
+        'Default'
+        'Off'
+        'Low'
+        'Medium'
+        'High'
+      )
+      ParentFont = False
+      Style = csDropDownList
+      TabOrder = 0
+      Text = 'Default'
+    end
+  end
+  object gbOptions: TCEGroupBox
+    AnchorSideLeft.Control = gbModelSelection
+    AnchorSideTop.Control = gbThinkingLevel
     AnchorSideTop.Side = asrBottom
     AnchorSideRight.Control = gbAPIKey
     AnchorSideRight.Side = asrBottom
@@ -218,7 +267,7 @@ object frmAIDialog: TCEForm
     AnchorSideBottom.Side = asrBottom
     Left = 694
     Height = 414
-    Top = 148
+    Top = 247
     Width = 358
     Anchors = [akTop, akLeft, akRight, akBottom]
     BorderSpacing.Top = 2
@@ -226,7 +275,7 @@ object frmAIDialog: TCEForm
     ClientHeight = 396
     ClientWidth = 340
     ParentBackground = False
-    TabOrder = 4
+    TabOrder = 5
     Visible = False
     object CECheckbox1: TCECheckBox
       Left = 12

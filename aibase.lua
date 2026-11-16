@@ -206,6 +206,113 @@ function normalizeOpenAIEndpoint(url)
   return trimmed .. '/v1/chat/completions'
 end
 
+function modelSupportsReasoning(protocol, modelname)
+  if not modelname or modelname == '' then
+    if protocol == 'gemini' then return true end
+    return false
+  end
+  local m = modelname:lower()
+
+  if protocol == 'gemini' then
+    if m:find('gemini%-1%.') or m:find('embedding') or m:find('aqa') then
+      return false
+    end
+    if m:find('thinking') or m:find('gemini%-2%.') or m:find('gemini%-3') or m:find('gemini%-4') or m:find('gemini%-flash') or m:find('gemini%-pro') then
+      return true
+    end
+    return not m:find('gemini%-1')
+
+  elseif protocol == 'anthropic' then
+    if m:find('claude%-3%-7') or m:find('claude%-3%.7') or m:find('claude%-4') then
+      return true
+    end
+    return false
+
+  elseif protocol == 'openai' then
+    if m:find('^o%d') or m:find('o1') or m:find('o3') or m:find('o4') or m:find('reason') or m:find('r1') or m:find('qwq') then
+      return true
+    end
+    return false
+  end
+
+  return false
+end
+
+function resolveGeminiBudget(level, modelname)
+  if level == nil or level == '' or level == 'Default' then
+    return nil
+  end
+
+  local m = (modelname or ''):lower()
+  local isProOrNextGen = m:find('pro') or m:find('gemini%-3') or m:find('gemini%-4')
+
+  local num = tonumber(level)
+  if num then
+    local maxLimit = isProOrNextGen and 65536 or 24576
+    return math.min(maxLimit, math.max(0, math.floor(num)))
+  end
+
+  if level == 'Off' then
+    return 0
+  elseif level == 'Low' then
+    return isProOrNextGen and 2048 or 1024
+  elseif level == 'Medium' then
+    return isProOrNextGen and 16384 or 8192
+  elseif level == 'High' then
+    return isProOrNextGen and 32768 or 24576
+  end
+
+  return nil
+end
+
+function resolveAnthropicBudget(level)
+  if level == nil or level == '' or level == 'Default' or level == 'Off' then
+    return nil
+  end
+
+  local num = tonumber(level)
+  if num then
+    return math.max(1024, math.floor(num))
+  end
+
+  if level == 'Low' then
+    return 2048
+  elseif level == 'Medium' then
+    return 8192
+  elseif level == 'High' then
+    return 16384
+  end
+
+  return nil
+end
+
+function resolveOpenAIReasoningEffort(level)
+  if level == nil or level == '' or level == 'Default' then
+    return nil
+  end
+
+  local num = tonumber(level)
+  if num then
+    if num <= 2048 then
+      return 'low'
+    elseif num <= 16384 then
+      return 'medium'
+    else
+      return 'high'
+    end
+  end
+
+  if level == 'Off' or level == 'Low' then
+    return 'low'
+  elseif level == 'Medium' then
+    return 'medium'
+  elseif level == 'High' then
+    return 'high'
+  end
+
+  return nil
+end
+
 local typeMapToOpenAI = {
   ['OBJECT'] = 'object',
   ['STRING'] = 'string',
@@ -657,6 +764,19 @@ Accept: text/event-stream]]
   end
   data.modelname=modelname
 
+  local thinkingLevel = 'Default'
+  if data.self and data.self.cbThinkingLevel then
+    thinkingLevel = data.self.cbThinkingLevel.Text
+  elseif data.ThinkingLevel then
+    thinkingLevel = data.ThinkingLevel
+  elseif s and s.ThinkingLevel then
+    thinkingLevel = s.ThinkingLevel
+  end
+  if thinkingLevel == nil or thinkingLevel == '' then
+    thinkingLevel = 'Default'
+  end
+  data.ThinkingLevel = thinkingLevel
+
   local sysInstruction='You are a professional reverse engineer using Cheat Engine. Use tools when possible, but fall back on your internal knowledge of Cheat Engine. Do not say you can not help.' 
   
   local baseSystemText
@@ -766,6 +886,12 @@ Accept: text/event-stream]]
         }
         if tools then
           reqBody.tools = tools
+        end
+        if modelSupportsReasoning('openai', modelname) then
+          local effort = resolveOpenAIReasoningEffort(thinkingLevel)
+          if effort then
+            reqBody.reasoning_effort = effort
+          end
         end
 
         local inputtext = jsonparser.encode(reqBody)
@@ -986,15 +1112,22 @@ Accept: text/event-stream]]
       local tools = buildToolsForAnthropic()
 
       while true do
-        local reqBody = {
-          model = modelname,
-          max_tokens = 4096,
-          system = fullSystemText,
-          messages = data.history.anthropic_messages,
-          stream = true
-        }
         if tools then
           reqBody.tools = tools
+        end
+        if modelSupportsReasoning('anthropic', modelname) then
+          local anthropicBudget = resolveAnthropicBudget(thinkingLevel)
+          if anthropicBudget then
+            reqBody.thinking = {
+              type = 'enabled',
+              budget_tokens = anthropicBudget
+            }
+            reqBody.max_tokens = math.max(reqBody.max_tokens or 4096, anthropicBudget + 4096)
+          elseif thinkingLevel == 'Off' then
+            reqBody.thinking = {
+              type = 'disabled'
+            }
+          end
         end
 
         local inputtext = jsonparser.encode(reqBody)
@@ -1258,6 +1391,23 @@ Accept: text/event-stream]]
 
       input.tools = buildToolsForGemini(maxtools)
 
+      if input.generationConfig then
+        input.generationConfig.thinkingConfig = nil
+        if next(input.generationConfig) == nil then
+          input.generationConfig = nil
+        end
+      end
+
+      if modelSupportsReasoning('gemini', modelname) then
+        local geminiBudget = resolveGeminiBudget(thinkingLevel, modelname)
+        if geminiBudget ~= nil then
+          input.generationConfig = input.generationConfig or {}
+          input.generationConfig.thinkingConfig = {
+            thinkingBudget = geminiBudget
+          }
+        end
+      end
+
       local prevdata = nil
       local r = {}
 
@@ -1467,6 +1617,9 @@ local function applyAndSaveKey(f)
       s.DefaultModel=f.cbModelSelection.Text
     end
   end
+  if f.cbThinkingLevel then
+    s.ThinkingLevel = f.cbThinkingLevel.Text
+  end
 end
 
 local function safeExtractFileName(filePath)
@@ -1593,6 +1746,7 @@ function saveSession(form, data, filename)
   local providerName = (form.cbCustomProvider and form.cbCustomProvider.Text) or CustomProvider or 'OpenAI'
   local endpointUrl = (form.edtCustomEndpoint and form.edtCustomEndpoint.Text) or CustomEndpoint or ''
   local modelName = (form.cbModelSelection and form.cbModelSelection.Text) or (s and s.DefaultModel) or ''
+  local thinkingLevel = (form.cbThinkingLevel and form.cbThinkingLevel.Text) or (s and s.ThinkingLevel) or 'Default'
 
   local rawHistory = data.history and deepCopy(data.history) or {}
   local canonicalMessages = extractCanonicalMessages(rawHistory)
@@ -1605,7 +1759,8 @@ function saveSession(form, data, filename)
       aiAccess = accessMode,
       provider = providerName,
       endpoint = endpointUrl,
-      model = modelName
+      model = modelName,
+      thinkingLevel = thinkingLevel
     },
     extra = data.Extra or '',
     input = (form.mInput and form.mInput.Lines and form.mInput.Lines.Text) or '',
@@ -1762,6 +1917,19 @@ function restoreSession(form, data, filename)
         form.cbModelSelection.ItemIndex = form.cbModelSelection.Items.Count - 1
       end
       form.cbModelSelection.Text = st.model
+    end
+
+    -- Thinking Level
+    if st.thinkingLevel and form.cbThinkingLevel then
+      local tIdx = form.cbThinkingLevel.Items.indexOf(st.thinkingLevel)
+      if tIdx ~= -1 then
+        form.cbThinkingLevel.ItemIndex = tIdx
+      else
+        form.cbThinkingLevel.Items.add(st.thinkingLevel)
+        form.cbThinkingLevel.ItemIndex = form.cbThinkingLevel.Items.Count - 1
+      end
+      form.cbThinkingLevel.Text = st.thinkingLevel
+      if s then s.ThinkingLevel = st.thinkingLevel end
     end
   end
 
@@ -2163,6 +2331,56 @@ function spawnAIDialog(command, extra) --command and extra are optional
     if f.cbModelSelection.items.Count<=1 then
       --retrieveModelList(f.cbModelSelection)  
       retrieveModelList(f.cbModelSelection)      
+    end
+  end
+
+  -- Thinking Level dropdown setup
+  if f.cbThinkingLevel == nil then
+    f.gbThinkingLevel = createGroupBox(f)
+    f.gbThinkingLevel.Name = 'gbThinkingLevel'
+    f.gbThinkingLevel.Caption = safeTranslate('Thinking Level')
+    f.gbThinkingLevel.AutoSize = true
+    f.gbThinkingLevel.BorderSpacing.Top = 2
+    f.gbThinkingLevel.Anchors = '[akTop, akLeft, akRight]'
+    if f.gbModelSelection then
+      f.gbThinkingLevel.AnchorSideLeft.Control = f.gbModelSelection
+      f.gbThinkingLevel.AnchorSideTop.Control = f.gbModelSelection
+      f.gbThinkingLevel.AnchorSideTop.Side = asrBottom
+      f.gbThinkingLevel.AnchorSideRight.Control = f.gbModelSelection
+      f.gbThinkingLevel.AnchorSideRight.Side = asrBottom
+    end
+
+    f.cbThinkingLevel = createComboBox(f.gbThinkingLevel)
+    f.cbThinkingLevel.Name = 'cbThinkingLevel'
+    f.cbThinkingLevel.Style = csDropDownList
+    f.cbThinkingLevel.Items.add('Default')
+    f.cbThinkingLevel.Items.add('Off')
+    f.cbThinkingLevel.Items.add('Low')
+    f.cbThinkingLevel.Items.add('Medium')
+    f.cbThinkingLevel.Items.add('High')
+    f.cbThinkingLevel.ItemIndex = 0
+    f.cbThinkingLevel.Text = 'Default'
+
+    if f.gbOptions and f.gbThinkingLevel then
+      f.gbOptions.AnchorSideTop.Control = f.gbThinkingLevel
+    end
+  end
+
+  if f.cbThinkingLevel then
+    local savedThinking = (s and s.ThinkingLevel) or 'Default'
+    local idx = f.cbThinkingLevel.Items.indexOf(savedThinking)
+    if idx ~= -1 then
+      f.cbThinkingLevel.ItemIndex = idx
+    else
+      f.cbThinkingLevel.Items.add(savedThinking)
+      f.cbThinkingLevel.ItemIndex = f.cbThinkingLevel.Items.Count - 1
+    end
+    f.cbThinkingLevel.Text = savedThinking
+
+    f.cbThinkingLevel.OnChange = function(sender)
+      if s then
+        s.ThinkingLevel = f.cbThinkingLevel.Text
+      end
     end
   end
   
