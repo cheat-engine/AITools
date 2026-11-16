@@ -1664,7 +1664,7 @@ registerAITool('executeLuaCode','Execute Cheat Engine Lua code inside the curren
 					--params
 					{
 						script={type='STRING', description='The script to execute'},						
-						async={type='BOOLEAN', description='Do not execute the code in the main GUI thread. Execute it in the AI tools thread instead. Default false'}
+						async={type='BOOLEAN', description='Do not execute the code in the main GUI thread. Execute it in the AI tools thread instead. Default false. Meaning it will run in the Main GUI thread. Watch out for performance'}
 					}
 					,
 					{ --required
