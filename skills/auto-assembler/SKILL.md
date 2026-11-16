@@ -1,6 +1,6 @@
 ---
 name: auto-assembler
-description: Writing Cheat Engine Auto Assembler (AA) scripts, embedded C blocks ({$c} and {$ccode}), AOB scanning (aobscanmodule), memory allocation (alloc), register preservation, code caves, assembly hooks, and enable/disable templates. Use this skill when generating, debugging, or analyzing Cheat Engine Auto Assembler injection scripts, cheat tables, and memory patches.
+description: Writing Cheat Engine Auto Assembler (AA) scripts, high-level detours (hook and unhook), embedded C blocks ({$c} and {$ccode}), AOB scanning (aobscanmodule), memory allocation (alloc), register preservation, code caves, and enable/disable templates. Use this skill when generating, debugging, or analyzing Cheat Engine Auto Assembler injection scripts, cheat tables, and memory patches.
 ---
 
 # Cheat Engine Auto Assembler Skill
@@ -13,6 +13,7 @@ The `auto-assembler` skill guides AI agents and reverse engineers in writing rob
 
 Activate this skill when:
 - Creating Auto Assembler scripts with `[ENABLE]` and `[DISABLE]` sections.
+- Writing high-level detours and trampolines using `hook(address, destination, originalcodelabel)` and `unhook(address)`.
 - Embedding native C code (`{$c}` and `{$ccode}`) for complex game logic, algorithms, state tracking, and string formatting without writing low-level assembly.
 - Writing Array of Byte (AOB) injection scripts that survive game updates (`aobscanmodule`,`aobscanfunction`,`aobscanregion`).
 - Implementing code caves, mid-function hooks, or function detours.
@@ -144,7 +145,176 @@ If you invoke a function using `call` inside `newmem`:
 
 ### 5. Handling RIP-Relative Stolen Bytes
 If the original stolen instruction uses RIP-relative addressing (e.g., `mov rax, [rip+0x1234]`), moving that instruction into `newmem` changes RIP, causing it to access invalid memory!
-- **Fix**: Re-encode the instruction using absolute addressing in `newmem`, or pick a hook site before/after the RIP-relative instruction.
+- **Fix**: Re-encode the instruction using absolute addressing in `newmem`, or pick a hook site before/after the RIP-relative instruction. (Alternatively, use the high-level `hook` command which reassembles instructions automatically).
+
+---
+
+## High-Level Detours: The `hook` and `unhook` Commands
+
+Cheat Engine provides the high-level `hook` and `unhook` Auto Assembler directives. Instead of manually disassembling instructions, calculating byte lengths, padding `nop` opcodes, finding near allocation caves within 2GB, and copying stolen bytes, `hook` automates the entire detour and trampoline generation process.
+
+### Syntax & Parameters
+
+```asm
+hook(address, destination, [originalcodelabel])
+```
+
+- **`address`**: The memory address, module offset, or label to hook (e.g., `INJECT` resolved from an `aobscanmodule`).
+- **`destination`**: The address or label where the hook will jump/call (e.g., your `newmem` code cave or custom C function).
+- **`originalcodelabel`** *(optional)*: The name of a label that Cheat Engine will automatically generate to hold the trampoline containing the original code.
+
+To disable the hook cleanly in the `[DISABLE]` section:
+
+```asm
+unhook(address)
+```
+
+- **`unhook(address)`**: Automatically restores the exact original unmodified bytes that were overwritten at `address` and deallocates the trampoline memory allocated for `originalcodelabel`. You do not need to write manual `db` restoration bytes or `dealloc(originalcodelabel)`.
+
+---
+
+### Core Mechanics & Capabilities
+
+#### 1. Automatic 2GB Jump Code Generation
+In 64-bit processes, manual hooks often crash when `newmem` cannot be allocated within 2GB of `address`, requiring either a 5-byte relative jump (`E9 ...`) or a 14-byte absolute jump (`FF 25 ...`).
+- `hook` writes the jump code for you **regardless of whether there is enough space within 2GB or not**.
+- Cheat Engine inspects memory space around `address`:
+  - If near memory (within +/- 2GB) is available, it writes a 5-byte jump (`HOOK5`) and automatically registers `destination` to prefer near allocation.
+  - If near memory is not available, it automatically falls back to a 14-byte far jump (`HOOK14` / `jmp far`).
+- **Instruction Boundary Preservation**: `hook` inspects the original instructions using Cheat Engine's disassembler and steals enough *whole* instructions to fit the jump. You never have to count instruction bytes or manually pad extra space with `nop`.
+
+#### 2. Automatic Trampoline Generation (`originalcodelabel`)
+When `originalcodelabel` is provided, Cheat Engine:
+1. Automatically allocates executable memory for the trampoline stub.
+2. Reassembles the stolen original instructions at `originalcodelabel` (using `reassemble` to automatically adjust RIP-relative offsets).
+3. Emits an unconditional jump back to the instruction immediately following the hooked bytes.
+4. Makes `originalcodelabel` callable or jumpable from anywhere in your AA script or embedded C code (`jmp originalcodelabel` or `call originalcodelabel`).
+
+#### 3. Skipping Hooked Instructions via Sub-Labels (`originalcodelabel_lineN`)
+Cheat Engine also registers automatic line-specific sub-labels for each stolen instruction:
+- **`originalcodelabel_line2`**: Points to the instruction immediately following the first stolen instruction.
+- **`originalcodelabel_line3`**: Points to the instruction immediately following the second stolen instruction, etc.
+
+> [!TIP]
+> **Skipping Unwanted Game Operations:**
+> If the first instruction at the hook site is a health or ammo decrement (e.g., `sub [rbx+0x10], eax`) and subsequent stolen instructions handle essential entity bookkeeping (e.g., updating timestamps or flags), you do not need to replicate the bookkeeping instructions manually.
+> Simply execute your custom logic, and then jump to `originalcodelabel_line2`:
+> ```asm
+> // Bypass the first instruction (e.g. sub [rbx+0x10], eax)
+> jmp originalcodelabel_line2
+> ```
+
+---
+
+### Synergy with `{$c}` and `{$ccode}` Blocks
+
+The `hook` command pairs exceptionally well with embedded `{$c}` and `{$ccode}` blocks. Because `hook` handles all detour jumps, instruction boundaries, and trampoline returns, your script avoids all manual assembly boilerplate (`jmp return`, manual stolen bytes, `nop` padding), giving your code an exceptionally clean and readable look.
+
+#### Comparison: Traditional Manual Cave vs. `hook` + `{$ccode}`
+
+**Traditional Boilerplate Cave (manual calculations & stolen byte management):**
+```asm
+[ENABLE]
+aobscanmodule(INJECT, Game.exe, 89 83 B8 00 00 00 48 8B)
+alloc(newmem, $1000, INJECT)
+label(code)
+label(return)
+
+newmem:
+{$ccode player=RBX newhp=EAX}
+if (player) newhp = 9999;
+{$asm}
+
+code:
+  mov [rbx+000000B8], eax // Manual stolen bytes
+  jmp return              // Manual return jump
+
+INJECT:
+  jmp newmem              // Manual 5-byte hook
+  nop                     // Manual padding
+return:
+registersymbol(INJECT)
+
+[DISABLE]
+INJECT:
+  db 89 83 B8 00 00 00   // Manual raw byte restoration
+unregistersymbol(INJECT)
+dealloc(newmem)
+```
+
+**Clean Modern Hook (`hook` + `{$ccode}` + `unhook`):**
+```asm
+[ENABLE]
+aobscanmodule(INJECT, Game.exe, 89 83 B8 00 00 00 48 8B)
+alloc(newmem, $1000)
+
+newmem:
+{$ccode player=RBX newhp=EAX}
+if (player) newhp = 9999;
+{$asm}
+  jmp origcode            // Jump to auto-generated trampoline
+
+hook(INJECT, newmem, origcode)
+registersymbol(INJECT)
+
+[DISABLE]
+unhook(INJECT)
+unregistersymbol(INJECT)
+dealloc(newmem)
+```
+
+---
+
+### Practical Examples with `hook`
+
+#### Example 1: Pure Assembly Hook Skipping Damage via `originalcodelabel_line2`
+
+```asm
+[ENABLE]
+aobscanmodule(DamageHook, Game.exe, 29 73 18 48 8B 4B 20) // sub [rbx+18], esi ; mov rcx, [rbx+20]
+alloc(newmem, $1000)
+
+newmem:
+  // Check if target entity is the player (flag at offset 0x10 == 1)
+  cmp byte ptr [rbx+10], 1
+  jne origcode                     // If not player, execute all original instructions including sub
+
+  // Player godmode: skip line 1 (sub [rbx+18], esi) and jump directly to line 2 (mov rcx, [rbx+20])
+  jmp origcode_line2
+
+hook(DamageHook, newmem, origcode)
+registersymbol(DamageHook)
+
+[DISABLE]
+unhook(DamageHook)
+unregistersymbol(DamageHook)
+dealloc(newmem)
+```
+
+#### Example 2: Clean `{$ccode}` Hook with Custom Logic and Trampoline Call
+
+```asm
+[ENABLE]
+aobscanmodule(AmmoHook, Game.exe, 48 89 5C 24 08 57 48 83 EC 20)
+alloc(newmem, $1000)
+
+newmem:
+{$ccode weapon=RCX clip=RDX}
+// If weapon is valid, ensure clip never drops below 30
+if (weapon != 0 && clip < 30) {
+    clip = 30;
+}
+{$asm}
+  jmp origammo                    // Execute original function prelude via trampoline
+
+hook(AmmoHook, newmem, origammo)
+registersymbol(AmmoHook)
+
+[DISABLE]
+unhook(AmmoHook)
+unregistersymbol(AmmoHook)
+dealloc(newmem)
+```
 
 ---
 
@@ -486,6 +656,8 @@ dealloc(newmem)
 
 | Directive | Purpose | Example |
 | :--- | :--- | :--- |
+| `hook(address, destination, [origlabel])` | Generates near/far jump detour, reads original code, and builds trampoline with line labels (`origlabel_line2`) | `hook(HealthHook, newmem, origcode)` |
+| `unhook(address)` | Restores original bytes at hook site and frees trampoline memory in `[DISABLE]` section | `unhook(HealthHook)` |
 | `aobscanmodule(sym, mod, hex)` | Scans specified module for byte pattern | `aobscanmodule(HealthHook, game.exe, F3 0F 11 83 ?? ?? 00 00)` |
 | `aobscanfunction(sym, functionaddress, hex)` | Scans specified function for byte pattern | `aobscanfunction(HealthHook, player:setHealth, F3 0F 11 83 ?? ?? 00 00)` |
 | `aobscanregion(sym, startaddress, stopaddress, hex)` | Scans specified region for byte pattern | `aobscanregion(HealthHook, player:setHealth, player:setHealth+100, F3 0F 11 83 ?? ?? 00 00)` |
