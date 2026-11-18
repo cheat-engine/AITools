@@ -11,12 +11,14 @@ function ai_openProcess(args)
   
   if processname then
     local r  
-    r=openProcess(processname)
+    synchronize(function()
+      r=openProcess(processname)   
+    end)
     if r then
       return {result='Success', currentProcessID=getOpenedProcessID()}      
     else
       return {error='Failure opening '..processname}
-    end
+    end    
   else
     return {error='No processname provided'}
   end   

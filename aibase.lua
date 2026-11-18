@@ -799,6 +799,25 @@ Accept: text/event-stream]]
     baseSystemText=baseSystemText.." (32-bit)\n"
   end
   
+  local pid=getOpenedProcessID()
+  if pid~=0 then
+    baseSystemText=baseSystemText.."Currently opened process " ..pid.." ( "..process.." )\n"
+    
+    if miMonoTopMenuItem and miMonoTopMenuItem.Visible then
+      baseSystemText=baseSystemText.."This target uses mono/.net and CE's mono tools are available to be used\n"
+    end
+    
+    if UEngine and type(UEngine)=='table' and UEngine.GUI and UEngine.GUI.miUnrealEngine and UEngine.GUI.miUnrealEngine.Visible then  
+      baseSystemText=baseSystemText.."This target used Unreal Engine. CE's unreal engine tools are available\n"
+      
+      if UEngine.GEngine then
+        baseSystemText=baseSystemText..string.format("GEngine is already known: 0x%x\n", UEngine.GEngine)      
+      end
+    else
+      baseSystemText=baseSystemText.."No process has been opened yet\n"
+    end
+  end
+  
   local skillCatalogPrompt = (getSkillsCatalogPrompt and getSkillsCatalogPrompt()) or ''
   if skillCatalogPrompt ~= '' then
     baseSystemText = baseSystemText .. '\n\n' .. skillCatalogPrompt
@@ -814,7 +833,11 @@ Accept: text/event-stream]]
   local function executeTool(name, args)
     synchronize(function()
       if data.self and data.self.mOutput then
-        data.self.mOutput.lines.add(' *Calling function :' .. name .. '* \n\r')
+        if args.reason then
+          data.self.mOutput.lines.add(' *Calling function :' .. name .. ' ('..args.reason..')* \n\r')  --Prompt you can add yourself: "When calling tools always provide a `reason` argument why you need to use this tool"
+        else
+          data.self.mOutput.lines.add(' *Calling function :' .. name .. '* \n\r')
+        end
       end
     end)
     local tool = aitools[name]

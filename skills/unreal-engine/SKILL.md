@@ -26,7 +26,7 @@ Activate this skill when:
 Every Unreal Engine game shares a standardized runtime reflection system:
 
 1. **`FNamePool` / `GNames`**:
-   The global name cache mapping integer indices to engine strings ("None", "Actor", "PlayerController", "Health", etc.).
+   The global name cache mapping integer indices to engine strings ("None", "Actor", "PlayerController", "Health", etc.). When scanned by `UETools`, these entries are cached in `UEngine.NameToIndex` and `UEngine.IndexToName`. Because these tables contain hundreds of thousands of entries, **never dump them**—always query individual strings or indices.
 2. **`GUObjectArray`**:
    A global chunked or flat array indexing every instantiated `UObject` in the engine. Each object has:
    - `VTable` pointer at offset `0x00`.
@@ -81,6 +81,21 @@ Cheat Engine bundles the `UETools` extension (`UEInfoScanner.LUA` and `UEInfoStr
    - `GUObjectArray` base address.
 4. Once scanned, `GWorld` is resolved through `GEngine->GameViewport->World`, and you can open **UETools Structure Dissect** (or menu **Dissect GEngine**) to view classes, methods, and fields by their engine-defined names rather than raw offsets!
 
+> [!CAUTION]
+> ### CRITICAL: NEVER Dump the `UEngine` Lua Table
+> Scanning for UE info populates the global `UEngine` table in Cheat Engine's Lua environment.
+> - **NEVER dump or serialize `UEngine`**: Do NOT call `print(tableToString(UEngine))`, `inspect(UEngine)`, `json.encode(UEngine)`, or run any recursive/loop-based table enumerations on `UEngine`.
+> - **Stay away from `UEngine.NameToIndex` and `UEngine.IndexToName`**: These tables cache the game's entire `FNamePool` / `GNames` list (often hundreds of thousands of entries). Attempting to enumerate, dump, or serialize them will freeze or crash Cheat Engine, exhaust memory, overflow MCP/LLM communication buffers, and hang background worker threads.
+> - **Query individual strings or FName indexes instead**: Always perform targeted lookups directly by key rather than enumerating:
+>   ```lua
+>   -- Safe: Query FName index for a specific string
+>   local engineIndex = UEngine.NameToIndex['GameEngine']
+>   local pawnIndex = UEngine.NameToIndex['AcknowledgedPawn']
+>
+>   -- Safe: Query string for a specific FName index
+>   local name = UEngine.IndexToName[nameIndex]
+>   ```
+
 ### 2. Manual AOB Scanning for `GWorld`
 If `UETools` auto-scan cannot locate `GWorld`, pattern scan for the instruction referencing `GWorld`:
 
@@ -119,6 +134,37 @@ All Blueprint and dynamic Unreal methods are routed through:
 ---
 
 ## Example Lua Integration in Cheat Engine
+
+### 1. Safe `UEngine` Lookups (Never Dump `UEngine`)
+
+```lua
+-- NEVER do this! Enumerating NameToIndex/IndexToName freezes or crashes Cheat Engine:
+-- print(tableToString(UEngine))
+
+-- DO: Query individual strings or FName indexes directly:
+if UEngine and UEngine.NameToIndex then
+  local engineClassIndex = UEngine.NameToIndex['GameEngine']
+  local actorClassIndex  = UEngine.NameToIndex['Actor']
+  print(string.format("GameEngine FName index: %s", tostring(engineClassIndex)))
+end
+
+-- DO: Resolve an FName index read from an object into its string:
+function resolveFName(index)
+  if UEngine and UEngine.IndexToName then
+    return UEngine.IndexToName[index & 0xFFFFFFFF] or "Unknown"
+  end
+  return nil
+end
+
+-- DO: Access known scalar offsets directly:
+if UEngine and UEngine.UObject then
+  print(string.format("UObject.Class offset: 0x%X", UEngine.UObject.Class))
+  print(string.format("UObject.Name offset: 0x%X", UEngine.UObject.Name))
+end
+```
+
+### 2. Resolving Local Pawn from `GEngine` (skipping World)
+
 ```lua
 -- Resolving local pawn directly from GEngine (skipping World):
 function getLocalPawnFromGEngine(gengineAddr, offsets)
