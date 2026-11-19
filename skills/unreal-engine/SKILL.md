@@ -16,6 +16,7 @@ Activate this skill when:
 - Finding the global engine pointers: `GEngine`, `GWorld`, `GNames` (`FNamePool`), and `GUObjectArray`.
 - Traversing the runtime game object hierarchy directly from `GEngine` (`GEngine` links directly to `GameInstance`, skipping the `World` step: `GEngine -> GameInstance -> LocalPlayers[0] -> PlayerController -> AcknowledgedPawn`).
 - Dissecting `UObject`, `UClass`, `UProperty`, and `UFunction` layouts dynamically.
+- Inspecting and querying class definitions, field types, and offsets dynamically using published UETools functions (`UObject_enumProperties`, `UClass_enumProperties`, `UEngine_findObjectStart`).
 - Locating Actor components: `RootComponent` (positions/coordinates), `CharacterMovementComponent` (speed, gravity, fly mode), and player attributes.
 - Hooking `UObject::ProcessEvent` for engine-wide event interception and method invocation.
 
@@ -131,6 +132,19 @@ All Blueprint and dynamic Unreal methods are routed through:
   - Intercepting damage events (e.g. `ReceivePointDamage`, `ApplyDamage`) and zeroing incoming damage.
   - Calling in-game functions with custom parameters.
 
+### 5. Inspecting Class Definitions & Offsets via Published UETools APIs
+Cheat Engine's `UETools` publishes several global Lua helper functions for introspecting runtime objects, querying class layouts, and locating object base addresses from interior pointers:
+
+| Function | Purpose | Return Value |
+| :--- | :--- | :--- |
+| `UObject_enumProperties(address)` | Enumerate all properties (including inherited ones) of an instantiated `UObject`. | Table of `[propName] = { offset, size, propertyType, propertyAddress }` |
+| `UClass_enumProperties(class, [usealt], [r])` | Enumerate all properties directly from a `UClass` or `UStruct` pointer. | Table of `[propName] = { offset, size, propertyType, propertyAddress }` |
+| `UEngine_findObjectStart(startAddress)` | Scan backwards from an arbitrary interior memory address to find the enclosing `UObject` base. | Base address of the enclosing `UObject`, or `nil` |
+| `UObject_getName(UObjectAddress)` | Resolves the runtime engine name of an object instance. | String (e.g. `"BP_HeroCharacter_C_1"`), or `nil` |
+
+- **Why use these functions**: Instead of hardcoding fragile offsets across game updates, you can dynamically resolve exact property offsets at runtime (e.g. `props['Health'].offset` or `props['CharacterMovement'].offset`).
+- **Enclosing Object Discovery (`UEngine_findObjectStart`)**: When a memory scan or breakpoint identifies a specific attribute address (e.g. health float at `0x7FF...B8`), calling `UEngine_findObjectStart(0x7FF...B8)` walks backward to locate the base `APawn` or `ACharacter` pointer and verifies that the field offset falls within the object.
+
 ---
 
 ## Example Lua Integration in Cheat Engine
@@ -185,5 +199,42 @@ function getLocalPawnFromGEngine(gengineAddr, offsets)
   
   return pawn
 end
+```
 
+### 3. Enumerating Properties and Finding Object Bases Dynamically
+
+```lua
+-- 1. Locate the base UObject pointer from an interior address (e.g. from a float scan for health):
+local foundHealthAddress = 0x12345678 -- Example address from a memory scan
+local objectBase = UEngine_findObjectStart(foundHealthAddress)
+
+if objectBase then
+  local objectName = UObject_getName(objectBase)
+  print(string.format("Found enclosing object: %s at 0x%X", objectName or "Unknown", objectBase))
+
+  -- 2. Enumerate all properties for this object (automatically includes parent/super classes):
+  local props = UObject_enumProperties(objectBase)
+  if props then
+    -- Inspect specific property offsets and types without dumping the whole table:
+    if props['Health'] then
+      print(string.format("Health offset: 0x%X (Type: %s, Size: %d)", 
+        props['Health'].offset, props['Health'].propertyType, props['Health'].size or 0))
+    end
+    if props['MaxHealth'] then
+      print(string.format("MaxHealth offset: 0x%X", props['MaxHealth'].offset))
+    end
+    if props['CharacterMovement'] then
+      print(string.format("CharacterMovement offset: 0x%X", props['CharacterMovement'].offset))
+    end
+  end
+end
+
+-- 3. Enumerate properties directly from a UClass pointer (without needing an object instance):
+-- Example: Reading class definition of GameEngineClass
+if UEngine and UEngine.GameEngineClass then
+  local engineProps = UClass_enumProperties(UEngine.GameEngineClass)
+  if engineProps and engineProps['GameInstance'] then
+    print(string.format("GameInstance offset in GameEngine: 0x%X", engineProps['GameInstance'].offset))
+  end
+end
 ```
