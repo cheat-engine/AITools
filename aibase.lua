@@ -813,9 +813,9 @@ Accept: text/event-stream]]
       if UEngine.GEngine then
         baseSystemText=baseSystemText..string.format("GEngine is already known: 0x%x\n", UEngine.GEngine)      
       end
-    else
-      baseSystemText=baseSystemText.."No process has been opened yet\n"
     end
+  else
+    baseSystemText=baseSystemText.."No process has been opened yet\n"    
   end
   
   local skillCatalogPrompt = (getSkillsCatalogPrompt and getSkillsCatalogPrompt()) or ''
@@ -833,8 +833,12 @@ Accept: text/event-stream]]
   local function executeTool(name, args)
     synchronize(function()
       if data.self and data.self.mOutput then
-        if args.reason then
+        if name=='getSkill' then
+          data.self.mOutput.lines.add(' *Calling function :' .. name .. ' ('..args.skillName..')* \n\r')         
+        elseif args.reason then
           data.self.mOutput.lines.add(' *Calling function :' .. name .. ' ('..args.reason..')* \n\r')  --Prompt you can add yourself: "When calling tools always provide a `reason` argument why you need to use this tool"
+        elseif args.description then
+          data.self.mOutput.lines.add(' *Calling function :' .. name .. ' ('..args.description..')* \n\r')        
         else
           data.self.mOutput.lines.add(' *Calling function :' .. name .. '* \n\r')
         end

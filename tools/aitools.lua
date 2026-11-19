@@ -1109,7 +1109,7 @@ end
 
 function ai_executeLuaCode(args)
   local script=args.script
-  local async=args.async
+  local synchronized=args.synchronized
   print("AI: Executing "..script)
 
   local f,err=loadstring(script)
@@ -1125,12 +1125,12 @@ function ai_executeLuaCode(args)
     end
 
     local r
-    if async then      
-      r=table.pack(pcall(f))
-    else
+    if synchronized then
       synchronize(function() --run it in the main thread
         r=table.pack(pcall(f))
-      end)
+      end)      
+    else
+      r=table.pack(pcall(f))      
     end
     
     print=ai_origprint      
@@ -1666,11 +1666,12 @@ registerAITool('executeLuaCode','Execute Cheat Engine Lua code inside the curren
 					--params
 					{
 						script={type='STRING', description='The script to execute'},						
-						async={type='BOOLEAN', description='Do not execute the code in the main GUI thread. Execute it in the AI tools thread instead. Default false. Meaning it will run in the Main GUI thread. Watch out for performance'}
+						synchronized={type='BOOLEAN', description='When true runs inside the main GUI thread. Usually only needed for operations that touch the GUI, like forms, addresslist, etc... e.g. it is not needed for print as that one is thread safe.  Default is false'},
+						reason={type='STRING', description='explanation of what this code does'},
 					}
 					,
 					{ --required
-						script
+						script, reason
 					}
  					,ai_executeLuaCode)
 

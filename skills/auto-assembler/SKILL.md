@@ -15,7 +15,7 @@ Activate this skill when:
 - Creating Auto Assembler scripts with `[ENABLE]` and `[DISABLE]` sections.
 - Writing high-level detours and trampolines using `hook(address, destination, originalcodelabel)` and `unhook(address)`.
 - Embedding native C code (`{$c}` and `{$ccode}`) for complex game logic, algorithms, state tracking, and string formatting without writing low-level assembly.
-- Writing Array of Byte (AOB) injection scripts that survive game updates (`aobscanmodule`,`aobscanfunction`,`aobscanregion`).
+- Writing Array of Byte (AOB) injection scripts that survive game updates (`aobscan`, `aobscanmodule`, `aobscanfunction`, `aobscanregion`).
 - Implementing code caves, mid-function hooks, or function detours.
 - Preserving CPU registers and flags (`pushfq`/`popfq`, `pushaq`/`popaq`, 32-bit `pushad`/`popad`).
 - Ensuring 16-byte stack alignment and 32-byte shadow space in x64 Windows ABI during calls.
@@ -146,6 +146,70 @@ If you invoke a function using `call` inside `newmem`:
 ### 5. Handling RIP-Relative Stolen Bytes
 If the original stolen instruction uses RIP-relative addressing (e.g., `mov rax, [rip+0x1234]`), moving that instruction into `newmem` changes RIP, causing it to access invalid memory!
 - **Fix**: Re-encode the instruction using absolute addressing in `newmem`, or pick a hook site before/after the RIP-relative instruction. (Alternatively, use the high-level `hook` command which reassembles instructions automatically).
+
+---
+
+## AOB Scanning & Advanced Pattern Syntax
+
+Auto Assembler provides multiple AOB scanning directives to locate dynamic code and data addresses across game updates without hardcoded offsets:
+- `aobscan(symbolName, pattern)`: Scans all readable and executable memory in the target process.
+- `aobscanmodule(symbolName, moduleName, pattern)`: Restricts the scan to the memory range of a specific module (e.g. `Game.exe`).
+- `aobscanfunction(symbolName, functionAddress, pattern)`: Restricts the scan to the memory boundaries of a specific function.
+- `aobscanregion(symbolName, startAddress, stopAddress, pattern)`: Restricts the scan to an explicit start and stop address range.
+
+### Formatting Conventions & Best Practices
+- **Space-Separated Bytes (Preferred)**: Always format AOB patterns with spaces separating each byte token (e.g. `89 83 ** ** ** ** 48 8B`).
+- **Asterisk Wildcards (`*` Preferred)**: Use `*` (or `**` for an entire byte) for wildcards. While `?` is supported by Cheat Engine, `*` is the preferred convention across Cheat Engine scripts and tools.
+
+### Advanced Pattern Matching Features
+
+Cheat Engine's AOB scanner supports powerful byte-level, nibble-level, bit-level, and relational pattern operators:
+
+#### 1. Binary Bitmasks (`|1001***0|`)
+Enclose an 8-bit binary pattern in pipe characters (`|...|`) to scan at the individual bit level:
+- Must be exactly 8 characters long between the pipes (representing 1 byte).
+- Bits can be `0`, `1`, or `*` (wildcard bit).
+- **Example**:
+  ```asm
+  aobscanmodule(BitmaskHook, Game.exe, 48 8B |1001***0| 20)
+  ```
+  This matches any byte whose bits 7, 6, 3, and 0 are `1`, `0`, `1`, and `0` respectively, while bits 5, 4, 2, and 1 can be any value. This is especially useful for matching opcodes where instruction fields (such as ModR/M register encodings, SIB flags, or conditional branch codes) vary between builds.
+
+#### 2. Nibble Wildcards (`*A` / `A*`)
+Cheat Engine has native nibble support, allowing half-byte wildcards by combining an asterisk `*` with a hexadecimal digit:
+- **`*A`**: Matches any byte where the second (low) nibble is `A` (e.g. `0A`, `1A`, `2A`, `3A`, ... `FA`).
+- **`A*`**: Matches any byte where the first (high) nibble is `A` (e.g. `A0`, `A1`, `A2`, ... `AF`).
+- **Example**:
+  ```asm
+  // Match an instruction where only one nibble of an opcode or register specifier is fixed:
+  aobscanmodule(NibbleHook, Game.exe, 48 *8 89 5C 24 *0)
+  ```
+
+#### 3. Exclusion / NOT Operator (`!xx`)
+Placing an exclamation mark `!` in front of a 2-digit hex byte tells the scanner to match any value that is **NOT** that byte:
+- **`!00`**: Excludes `00` from the results (matches any byte value from `01` through `FF`).
+- **`!90`**: Matches any opcode byte that is not a `NOP` (`90`).
+- **Example**:
+  ```asm
+  // Find an instruction offset while ensuring the displacement byte is non-zero:
+  aobscanmodule(OffsetHook, Game.exe, 89 83 !00 00 00 00 48 8B)
+  ```
+
+#### 4. Relational / Comparison Operators (`<xx` and `>xx`)
+Placing `<` or `>` in front of a 2-digit hex byte specifies that the byte in memory must be strictly lower than or higher than that value:
+- **`<0A`**: Matches any byte value strictly lower than `0A` (i.e. `00` through `09`).
+- **`>0A`**: Matches any byte value strictly higher than `0A` (i.e. `0B` through `FF`).
+- **Example**:
+  ```asm
+  // Match a stack allocation greater than 0x20 and a displacement less than 0x10:
+  aobscanmodule(StackHook, Game.exe, 48 83 EC >20 48 89 5C 24 <10)
+  ```
+
+#### 5. Combined Advanced Patterns
+All of these advanced operators can be mixed within a single space-separated AOB scan pattern:
+```asm
+aobscanmodule(PlayerHook, Game.exe, 48 89 5C 24 *8 48 8B 05 ** ** ** ** |1000****| !00 >0A)
+```
 
 ---
 
@@ -658,9 +722,10 @@ dealloc(newmem)
 | :--- | :--- | :--- |
 | `hook(address, destination, [origlabel])` | Generates near/far jump detour, reads original code, and builds trampoline with line labels (`origlabel_line2`) | `hook(HealthHook, newmem, origcode)` |
 | `unhook(address)` | Restores original bytes at hook site and frees trampoline memory in `[DISABLE]` section | `unhook(HealthHook)` |
-| `aobscanmodule(sym, mod, hex)` | Scans specified module for byte pattern | `aobscanmodule(HealthHook, game.exe, F3 0F 11 83 ?? ?? 00 00)` |
-| `aobscanfunction(sym, functionaddress, hex)` | Scans specified function for byte pattern | `aobscanfunction(HealthHook, player:setHealth, F3 0F 11 83 ?? ?? 00 00)` |
-| `aobscanregion(sym, startaddress, stopaddress, hex)` | Scans specified region for byte pattern | `aobscanregion(HealthHook, player:setHealth, player:setHealth+100, F3 0F 11 83 ?? ?? 00 00)` |
+| `aobscan(sym, hex)` | Scans target memory for byte pattern | `aobscan(HealthHook, F3 0F 11 83 ** ** 00 00)` |
+| `aobscanmodule(sym, mod, hex)` | Scans specified module for byte pattern | `aobscanmodule(HealthHook, game.exe, F3 0F 11 83 ** ** 00 00)` |
+| `aobscanfunction(sym, functionaddress, hex)` | Scans specified function for byte pattern | `aobscanfunction(HealthHook, player:setHealth, F3 0F 11 83 ** ** 00 00)` |
+| `aobscanregion(sym, startaddress, stopaddress, hex)` | Scans specified region for byte pattern | `aobscanregion(HealthHook, player:setHealth, player:setHealth+100, F3 0F 11 83 ** ** 00 00)` |
 | `alloc(sym, size, [preferAddr])` | Allocates virtual memory in target | `alloc(newmem, $1000, HealthHook)` |
 | `dealloc(sym)` | Frees allocated memory on disable | `dealloc(newmem)` |
 | `registersymbol(sym)` | Registers global symbol for CE address list and Lua references | `registersymbol(HealthHook)` |

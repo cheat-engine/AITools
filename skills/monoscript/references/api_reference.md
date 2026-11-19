@@ -132,9 +132,9 @@ Forces the Mono runtime garbage collector to execute a full collection pass.
 ### `mono_enumImages(onImage)`
 - **Parameters**: `onImage` (`function(image)`) - Callback invoked for each loaded image.
 
-### `mono_enumImagesEx(domain)`
-- **Parameters**: `domain` (`qword`, optional) - Domain to inspect.
-- **Returns**: `table[]` - List of `{Image = qword, Path = string}`.
+### `mono_enumImagesEx()`
+Batch enumerates all loaded images across the target process in a single high-speed IPC stream.
+- **Returns**: `table[]` - Indexed list where each entry contains a table with `{Image = qword, Path = string}`, where `Image` is the image handle and `Path` is the name/path of the image.
 
 ### `mono_loadAssemblyFromFile(fname)`
 Loads an assembly from the target filesystem into the target Mono runtime.
@@ -170,6 +170,11 @@ Uses .NET `Type.GetType()` internally to resolve classes. Essential for finding 
 ### `mono_image_enumClassesEx(image)`
 Batch enumeration returning full class metadata:
 - **Returns**: `table[]` - Array of `{Handle, ParentHandle, NestingTypeHandle, Name, NameSpace, FullName}`.
+
+### `mono_image_enumClasses_il2cppfallback(image)`
+Memory-scanning fallback for Unity IL2CPP targets that discovers classes by locating 16-byte aligned class structures pointing to the given image. Used when metadata tables are inaccessible or stripped.
+- **Parameters**: `image` (`qword`).
+- **Returns**: `table[]` - Array of `{class = qword, classname = string, namespace = string}`.
 
 ### `mono_class_getName(class)`
 - **Returns**: `string` - Unqualified class name.
@@ -341,6 +346,11 @@ Finds a specific method overload by scoring parameter names and types.
   }
   ```
 
+### `mono_class_enumMethodsInMultipleClasses(classes)`
+Batch enumerates all methods across multiple classes in a single high-speed IPC stream.
+- **Parameters**: `classes` (`table[]` of `qword`): Array of `MonoClass*` handles to enumerate. If inherited methods are needed, include parent classes in the array.
+- **Returns**: `table[]` - Array of method tables corresponding to each class index.
+
 ### `mono_method_getName(method)`
 - **Returns**: `string` - Method name.
 
@@ -378,13 +388,13 @@ Specializes (inflates) an open generic method definition with concrete type argu
   - `declaringClassContext` (`qword`, optional): Class context handle if the method belongs to an already inflated generic class.
 - **Returns**: `qword` - Specialized `MonoMethod*` handle, or `0` on failure.
 
-### `mono_class_findMethodSpecialized(class, methodName, typeArguments)`
-Convenience helper that searches for a method by name on `class` and inflates it with `typeArguments` in a single operation.
-- **Parameters**:
-  - `class` (`qword`): `MonoClass*` handle.
-  - `methodName` (`string`): Unqualified method name.
-  - `typeArguments` (`qword` or `table`): Type arguments for generic specialization.
-- **Returns**: `qword` - Specialized `MonoMethod*` handle, or `0`/`nil` on failure.
+> [!NOTE]
+> **Generic Method Specialization Pattern**
+> To locate and specialize an open generic method (such as `GetComponent<T>()`), first resolve the uninflated generic method definition using `mono_class_findMethod`, then inflate it with concrete type arguments via `mono_method_inflate`:
+> ```lua
+> local method = mono_class_findMethod(class, methodName)
+> local specializedMethod = mono_method_inflate(method, typeArguments)
+> ```
 
 ### `mono_compile_method(method)`
 **Compiles a method into native machine code.**
@@ -458,9 +468,10 @@ Scans backwards from an interior address (such as a field pointer) to find the o
 - **Parameters**: `address` (`qword`), `maxsize` (`integer`, default `4096`).
 - **Returns**: `baseAddress, classAddress, className`.
 
-### `mono_class_findInstancesFast(class, includeSubclasses)`
+### `mono_class_findInstancesFast([domain], class, [includeSubclasses])`
 Fast native instance lookup utilizing runtime GC heap walking (`mono_gc_walk_heap` in Mono) or the Unity Liveness subsystem (`unity_liveness_calculation_*` in IL2CPP) without running a Cheat Engine memory scan.
 - **Parameters**:
+  - `domain` (`qword`, optional): Domain handle (defaults to `nil` when called as `(class, includeSubclasses)`).
   - `class` (`qword`): Target `MonoClass*` handle.
   - `includeSubclasses` (`boolean`, optional, default `false`): If `true`, matches instances of derived classes.
 - **Returns**: `qword[]` - Table of active object memory addresses (`{}` if none found).
@@ -470,8 +481,12 @@ Fast native instance lookup utilizing runtime GC heap walking (`mono_gc_walk_hea
 Performs a memory scan to locate all live instances of a class matching its VTable pointer.
 - **Parameters**: `domain` (`qword`), `class` (`qword`), `callback` (`function(addresses)`), `progressBar` (optional).
 
-### `mono_class_findInstancesOfClassListOnly(domain, class, progressBar)`
+### `mono_class_findInstancesOfClassListOnly([domain], class, [progressBar])`
 Finds all live instances of a class synchronously.
+- **Parameters**:
+  - `domain` (`qword`, optional): Domain handle (defaults to `nil` when called as `(class)` or `(class, progressBar)`).
+  - `class` (`qword`): Target `MonoClass*` handle.
+  - `progressBar` (`userdata`, optional): Visual progress bar control.
 - **Returns**: `qword[]` - Array of instance memory addresses.
 - **Notes**: In Unity games, leverages `UnityEngine.Resources.FindObjectsOfTypeAll` or `UnityEngine.Object.FindObjectsOfType`. For general Mono/IL2CPP classes, attempts `mono_class_findInstancesFast` first before falling back to Cheat Engine memory scanning.
 

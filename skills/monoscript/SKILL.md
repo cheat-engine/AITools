@@ -8,7 +8,7 @@ description: Cheat Engine Mono and Unity IL2CPP runtime scripting, reverse engin
 The `monoscript` skill enables AI agents to reverse engineer, inspect, hook, and manipulate applications and games built with the **Mono runtime** (e.g., Unity Mono, standalone .NET Mono) or **Unity IL2CPP** via Cheat Engine's `autorun/monoscript.lua` and injected **MonoDataCollector**.
 Even IL2CPP targets get injected with the monodatacollector library and they will adjust accordingly to their environment
 When the monodatacollector is attached to an IL2CPP target, it will spawn a thread that will enumerate all methods and their entry points and stores them in a symbollist used by Cheat Engine's symbol handler
-The symbolhandler will parse .net formatted strings to find the method or field.  If it is a field, it will return the static field, or the field offset if it is not a static address 
+The symbolhandler (`getAddressSafe`) will parse .net formatted strings to find the method or field.  If it is a field, it will return the static field, or the field offset if it is not a static address. This way you do not have to hardcode field offsets inside tables and they will update if the game updates. 
 ---
 
 ## When to Use This Skill
@@ -68,7 +68,9 @@ To hook or disassemble a method, first locate its class and compile it:
 -- Find class across all loaded assemblies
 local klass = mono_findClass("PlayerController")
 -- Or with namespace:
--- local klass = mono_findClass("Assembly-CSharp", "Game.PlayerController")
+-- local klass = mono_findClass("Game", "PlayerController") -- or mono_findClass("Game.PlayerController")
+-- Or resolve by assembly name via mono_findClass2:
+-- local klass = mono_findClass2("Game.PlayerController", "Assembly-CSharp")
 
 if klass and klass ~= 0 then
   -- Find method by name
@@ -181,15 +183,15 @@ Dynamically specialize open generic types and generic methods at runtime using r
 
 ```lua
 -- Inflate generic class: List<int>
-local listGeneric = mono_findClass("mscorlib", "System.Collections.Generic.List`1")
-local intClass = mono_findClass("mscorlib", "System.Int32")
+local listGeneric = mono_findClass("System.Collections.Generic", "List`1") -- or mono_findClass2("System.Collections.Generic.List`1", "mscorlib")
+local intClass = mono_findClass("System.Int32") -- or mono_findClass2("System.Int32", "mscorlib")
 local listOfIntClass = mono_class_inflate(listGeneric, intClass)
 -- Multiple type arguments: mono_class_inflate(dictGeneric, {keyClass, valClass})
 
 -- Inflate generic method: GetComponent<T>()
 local goClass = mono_findClass("UnityEngine", "GameObject")
 local getCompMethod = mono_class_findMethod(goClass, "GetComponent")
-local playerClass = mono_findClass("Assembly-CSharp", "PlayerController")
+local playerClass = mono_findClass("PlayerController") -- or mono_findClass2("PlayerController", "Assembly-CSharp")
 local inflatedMethod = mono_method_inflate(getCompMethod, playerClass)
 ```
 
@@ -336,7 +338,7 @@ Cheat Engine provides the `.NET Info` window (`frmDotNetInfo`) for exploring dom
 
 ### Never Invoke Open Generic Method Definitions
 > [!CAUTION]
-> Invoking an open (uninflated) generic method definition via `mono_invoke_method()` or `mono_runtime_invoke()` causes the Mono JIT compiler inside the target process to abort immediately:
+> Invoking an open (uninflated) generic method definition via `mono_invoke_method()` (or underlying runtime `mono_runtime_invoke()`) causes the Mono JIT compiler inside the target process to abort immediately:
 > `* Assertion at method-to-ir.c:7384, condition '!sig->has_type_parameters' not met` (`SIGABRT`, exit code 134).
 
 When resolving methods by name and parameter count (e.g., via `mono_class_enumMethods`):
@@ -376,10 +378,10 @@ In production Unity builds, root GameObjects are frequently not rooted in Mono G
 | Task | Primary Function | Secondary / Alternative |
 | :--- | :--- | :--- |
 | **Connect** | `LaunchMonoDataCollector()` | `getMonoPipe()`, `mono_isValid()` |
-| **Enum Images** | `mono_enumImagesEx()` | Returns a table of each image. Each entry contains the imagehandle and name of the image |
-| **Enum Classes** | `mono_image_enumClassesEx(imagehandle)` | Returns a list of all the classnames and classhandles and some other basic information |
+| **Enum Images** | `mono_enumImagesEx()` | Returns a table of each image. Each entry contains the `Image` (imagehandle) and `Path` (the name of the image)  |
+| **Enum Classes** | `mono_image_enumClassesEx(imagehandle)` | Returns a list of all the classes in the image. It contains fields like `Handle`, `Name`, `NameSpace`,`FullName`, etc... |
 | **Class Query** | `mono_findClass("Namespace.Class")` | `mono_findClass2(fullName, assembly)` |
-| **Enum Methods** | `mono_class_enumMethods(classhandle, includeParents:BOOLEAN)` | Returns a list of all the methods and their methodhandles, and other information |
+| **Enum Methods** | `mono_class_enumMethods(class, [includeParents])` | Returns a list of all the methods and their methodhandles, and other information |
 | **Method Query** | `mono_class_findMethod(class, name)` | `mono_findMethod(namespace, class, method, params)` |
 | **JIT Compile** | `mono_compile_method(method)` | Native entry point address returned |
 | **Field Info** | `mono_class_enumFields(class, true)` | Returns table of `{name, offset, isStatic, ...}` |
