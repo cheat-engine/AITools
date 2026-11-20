@@ -834,7 +834,11 @@ Accept: text/event-stream]]
     synchronize(function()
       if data.self and data.self.mOutput then
         if name=='getSkill' then
-          data.self.mOutput.lines.add(' *Calling function :' .. name .. ' ('..args.skillName..')* \n\r')         
+          if args.reference then
+            data.self.mOutput.lines.add(' *Calling function :' .. name .. ' ('..args.skillName..', '..args.reference..')* \n\r')          
+          else
+            data.self.mOutput.lines.add(' *Calling function :' .. name .. ' ('..args.skillName..')* \n\r')
+          end
         elseif args.reason then
           data.self.mOutput.lines.add(' *Calling function :' .. name .. ' ('..args.reason..')* \n\r')  --Prompt you can add yourself: "When calling tools always provide a `reason` argument why you need to use this tool"
         elseif args.description then
@@ -1572,9 +1576,9 @@ Accept: text/event-stream]]
           data.Error = true
           textresult = 'Parse Error:' .. err
           if data.self then
-            synchronize(function()
-              if result == nil or result:trim() == '' then
-                data.self.mOutput.lines.add('\n\r  *<server seems to be down>*')
+            synchronize(function()              
+              if result == nil or result:trim() == '' or result:startsWith('error code') then
+                data.self.mOutput.lines.add('\n\r  *<server seems to be down. Continue later>*')
               else
                 data.self.mOutput.lines.add('\n\r<Error while receiving data:' .. err .. '>')
               end

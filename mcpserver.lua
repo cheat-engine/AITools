@@ -2165,8 +2165,10 @@ function MCPServer.initMenu()
     -- Initial visibility based on autoStart setting
     topMenu.Visible = (MCPServer.autoStart == true)
 
-    -- Add topMenu to MainForm.Menu.Items
-    MainForm.Menu.Items.add(topMenu)
+    -- Add topMenu to MainForm.Menu.Items    
+    MainForm.Menu.Items.insert(MainForm.Menu.Items.Count-1, topMenu) --add it before help
+
+
     MCPServer.updateMenu()
   end)
 end
