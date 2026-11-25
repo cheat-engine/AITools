@@ -9,6 +9,8 @@
 --MIT License
 --https://github.com/cheat-engine/AITools
 
+if getCEVersion()<=7.73 then _G.try=pcall end --bug bypass: earlier versions have a bugged try. pcall is the best alternative  
+
 local s=getSettings('AITOOLS',true)
 local AIAccess=tonumber(s.AIAccess)
 local PatreonSessionID=s.PatreonSessionID or getCEPatreonSessionID()
@@ -866,7 +868,7 @@ Accept: text/event-stream]]
       return { Error = 'Invalid config for ' .. name }
     end
 
-    local ok, res = pcall(tool.functionToCall, args or {})
+    local ok, res = try(tool.functionToCall, args or {})
     if not ok then
       local errMsg = tostring(res)
       synchronize(function()
@@ -874,7 +876,7 @@ Accept: text/event-stream]]
           data.self.mOutput.lines.add('result error: ' .. errMsg .. '\n\r')
         end
       end)
-      return { Error = errMsg }
+      return { Error = 'Tool call failed:'..errMsg }
     end
     return res
   end

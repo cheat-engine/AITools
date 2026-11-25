@@ -2,6 +2,9 @@
 --MIT License 
 --https://github.com/cheat-engine/AITools
 
+
+
+
 function ai_getOpenedProcessName()
   if process then return {processname=process} else return {processname='no process opened yet'} end
 end
@@ -1110,7 +1113,12 @@ end
 function ai_executeLuaCode(args)
   local script=args.script
   local synchronized=args.synchronized
-  print("AI: Executing "..script)
+  local timeout=args.timeout --in seconds
+  if timeout==nil then
+    timeout=5*60 --5 minutes
+  end
+  
+  print("AI: Executing Lua code (timeout="..timeout..") "..script)
 
   local f,err=loadstring(script)
 
@@ -1118,19 +1126,38 @@ function ai_executeLuaCode(args)
     local ai_origprint
     local ai_printlog=''
 
-    ai_origprint=print      
+    ai_origprint=print    
+
     print=function(...)
       local r=ai_origprint(...)
-      ai_printlog=ai_printlog..r..'\n'  
+      if r then
+        ai_printlog=ai_printlog..r..'\n'
+      end
     end
 
     local r
     if synchronized then
       synchronize(function() --run it in the main thread
-        r=table.pack(pcall(f))
+        r=table.pack(try(f))
       end)      
     else
-      r=table.pack(pcall(f))      
+      if timeout>0 then
+        --create a new thread and wait for it
+        local t=createThread(function(t)
+          t.freeOnTerminate(false)
+          r=table.pack(try(f)) 
+        end)
+
+        if t.waitfor(timeout*1000)==false then        
+          t.freeOnTerminate(true) 
+          --failed
+         
+          print=ai_origprint
+          return {result='false', error='script loaded, but timeout triggered after '..timeout..' seconds', printlog=ai_printlog}
+        end
+      else
+        r=table.pack(try(f))
+      end
     end
     
     print=ai_origprint      
@@ -1149,9 +1176,9 @@ function ai_executeLuaCode(args)
         return {result='true', returnedValues=v, printlog=ai_printlog}
       else
         if r[2] then
-          return {result='false', error='script loaded, error:'..r[2]}
+          return {result='false', error='script loaded, but execution failed with error:'..r[2]}
         else
-          return {result='false', error='script loaded, unknown error'}
+          return {result='false', error='script loaded, but execution failed with an unknown error'}
         end
 
       end
@@ -1178,9 +1205,14 @@ end
 
 function ai_getLuaDocumentationByKeyword(args)
   local keyword=args.keyword
+  local caseSensitive=args.caseSensitive
   local range=args.range or 2
   if keyword==nil then
     return {result='false', error='No keyword provided'}
+  end
+  
+  if not caseSensitive then
+    keyword=keyword:lower()
   end
 
   if ai_initdocs() then
@@ -1190,7 +1222,11 @@ function ai_getLuaDocumentationByKeyword(args)
     else
       results={}
       for i=0,docs.Count-1 do
-        local f=docs[i]     
+        local f=docs[i]  
+        if not caseSensitive then
+          f=f:lower()
+        end
+        
         if string.find(f:lower(),keyword,1,true) then
           local block={}
           for j=i-2,i+2 do
@@ -1662,11 +1698,13 @@ registerAITool('wait',[[Waits a specific amount of time in milliseconds outside 
                                         
 
 
-registerAITool('executeLuaCode','Execute Cheat Engine Lua code inside the current Cheat Engine instance. Returns result=true/false. On true, the return values of the script, on false the lua error.  It also returns the print and printf results',
+registerAITool('executeLuaCode',[[Execute Cheat Engine Lua code inside the current Cheat Engine instance. Returns result=true/false. On true, the return values of the script, on false the lua error.  It also returns the print and printf results
+Please make use of the CE lua documentation when unsure or code doesn't work as expected]],
 					--params
 					{
 						script={type='STRING', description='The script to execute'},						
 						synchronized={type='BOOLEAN', description='When true runs inside the main GUI thread. Usually only needed for operations that touch the GUI, like forms, addresslist, etc... e.g. it is not needed for print as that one is thread safe.  Default is false'},
+						timeout={type='INTEGER', description='The timeout in seconds to wait for the lua script to finish. If not provided the default is 5 minutes. If timeout is <=0 it will never timeout.  Does not work when the lua code is running inside the main GUI thread'},
 						reason={type='STRING', description='explanation of what this code does'},
 					}
 					,
@@ -1679,6 +1717,7 @@ registerAITool('getCELuaDocumentationByKeyword','Retrieves a part of the lua doc
 					--params
 					{
 						keyword={type='STRING', description='The keyword to look for'},
+						caseSensitive={type='BOOLEAN', description='when true the scan will be case sensitive. Default is false'}, 
 						range={type='INTEGER', description='The number of lines before and after the keyword to return. Default is 2, meaning 5 lines'}	
 					}
 					,					
