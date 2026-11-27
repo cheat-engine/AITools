@@ -1236,7 +1236,7 @@ MCPServer.registerTool(
       return { success = false, error = "Syntax error: " .. tostring(ferr), output = table.concat(captured, "\n") }
     end
 
-    local ok, res = pcall(f)
+    local ok, res = try(f)
     print = oldPrint
 
     return {
@@ -1342,9 +1342,9 @@ local function handleJsonRpc(req)
     if toolName == "execute_lua" then
       -- execute_lua runs directly in the background worker thread.
       -- Scripts that need GUI access must call synchronize(...) themselves (AGENTS.md Rule 6).
-      execOk, execResult = pcall(tool.func, toolArgs)
+      execOk, execResult = try(tool.func, toolArgs)
     else
-      execOk, execResult = pcall(function()
+      execOk, execResult = try(function()
         return runOnMainThread(function()
           return tool.func(toolArgs)
         end)
@@ -1570,7 +1570,7 @@ local function sendHttpResponse(client, statusCode, statusText, headers, body, c
   table.insert(lines, body)
 
   local payload = table.concat(lines, "\r\n")
-  local ok, bytesWritten = pcall(function()
+  local ok, bytesWritten = try(function()
     client.lock()
     local bw = client.writeString(payload)
     client.unlock()
@@ -1628,7 +1628,7 @@ local function handleHttpRequest(client, method, uri, headerText, body)
     table.insert(lines, "")
     table.insert(lines, "event: endpoint\r\ndata: /messages?sessionId=" .. sessionId .. "\r\n\r\n")
 
-    pcall(function()
+    try(function()
       client.lock()
       client.writeString(table.concat(lines, "\r\n"))
       client.unlock()
@@ -1672,7 +1672,7 @@ local function handleHttpRequest(client, method, uri, headerText, body)
       local respJson = MCPServer.processMessageString(body)
       if respJson then
         local sseClient = targetSession.client
-        local ok, bytesWritten = pcall(function()
+        local ok, bytesWritten = try(function()
           sseClient.lock()
           local payload = respJson:gsub("\r?\n", "\ndata: ")
           local bw = sseClient.writeString("event: message\r\ndata: " .. payload .. "\r\n\r\n")
@@ -1831,7 +1831,7 @@ local function handleClientConnection(client, clientThread)
           local resp = MCPServer.processMessageString(msg)
           if resp then
             local framed = "Content-Length: " .. #resp .. "\r\n\r\n" .. resp
-            pcall(function()
+            try(function()
               client.lock()
               client.writeString(framed)
               client.unlock()
@@ -1847,7 +1847,7 @@ local function handleClientConnection(client, clientThread)
           if line ~= "" then
             local resp = MCPServer.processMessageString(line)
             if resp then
-              pcall(function()
+              try(function()
                 client.lock()
                 client.writeString(resp .. "\n")
                 client.unlock()
@@ -1874,7 +1874,9 @@ local function handleClientConnection(client, clientThread)
   end
   MCPServer.lockCS.leave()
 
-  pcall(function() client.destroy() end)
+  if client then
+    client.destroy()
+  end
 end
 
 -------------------------------------------------------------------------------
@@ -1917,7 +1919,9 @@ function MCPServer.start(port, localhostOnly)
         end)
       end
     end
-    pcall(function() ss.destroy() end)
+    if ss then
+      ss.destroy()
+    end
   end)
 
   MCPServer.heartbeatThread = createThread(function(thread)
@@ -1931,7 +1935,7 @@ function MCPServer.start(port, localhostOnly)
         local deadSessions = {}
         for sid, session in pairs(MCPServer.sseSessions) do
           if session.client then
-            local ok, bw = pcall(function()
+            local ok, bw = try(function()
               session.client.lock()
               local written = session.client.writeString(": keepalive\r\n\r\n")
               session.client.unlock()
@@ -1963,14 +1967,14 @@ function MCPServer.stop()
 
   -- Stop heartbeat thread
   if MCPServer.heartbeatThread then
-    pcall(function() MCPServer.heartbeatThread.terminate() end)
+    MCPServer.heartbeatThread.terminate()
     MCPServer.heartbeatThread = nil
   end
 
   -- Close active clients
   MCPServer.lockCS.enter()
   for _, c in pairs(MCPServer.clients) do
-    pcall(function() c.destroy() end)
+    try(function() c.destroy() end)
   end
   MCPServer.clients = {}
   MCPServer.sseSessions = {}
@@ -1978,11 +1982,11 @@ function MCPServer.stop()
 
   -- Unblock acceptConnection if waiting
   if MCPServer.serverSocket then
-    pcall(function()
+    try(function()
       local unblocker = connectToTCPServer("127.0.0.1", MCPServer.port)
       if unblocker then unblocker.destroy() end
     end)
-    pcall(function() MCPServer.serverSocket.destroy() end)
+    MCPServer.serverSocket.destroy() 
     MCPServer.serverSocket = nil
   end
 

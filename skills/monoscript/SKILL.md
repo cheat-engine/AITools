@@ -8,7 +8,7 @@ description: Cheat Engine Mono and Unity IL2CPP runtime scripting, reverse engin
 The `monoscript` skill enables AI agents to reverse engineer, inspect, hook, and manipulate applications and games built with the **Mono runtime** (e.g., Unity Mono, standalone .NET Mono) or **Unity IL2CPP** via Cheat Engine's `autorun/monoscript.lua` and injected **MonoDataCollector**.
 Even IL2CPP targets get injected with the monodatacollector library and they will adjust accordingly to their environment
 When the monodatacollector is attached to an IL2CPP target, it will spawn a thread that will enumerate all methods and their entry points and stores them in a symbollist used by Cheat Engine's symbol handler
-The symbolhandler (`getAddressSafe`) will parse .net formatted strings to find the method or field.  If it is a field, it will return the static field, or the field offset if it is not a static address. This way you do not have to hardcode field offsets inside tables and they will update if the game updates. 
+The symbolhandler (address string references or functions like `getAddressSafe`) will parse .net formatted strings to find the method or field.  If it is a method, and the method is not yet compiled, this will compile the method first. If it is a field, it will return the static field, or the field offset if it is not a static address. This way you do not have to hardcode field offsets inside tables and they will update if the game updates. 
 ---
 
 ## When to Use This Skill
@@ -85,10 +85,13 @@ if klass and klass ~= 0 then
     if not mono_isil2cpp() then
       local ilText = mono_method_disassemble(method)
       print(ilText)
+      
+      --note though that the method's shown are 32-bit .net TokenID's. You will need to lookup the mono pointer equivalent if you wish to use it with the mono_method_* functions
     end
   end
 end
 ```
+
 
 ---
 
@@ -381,7 +384,7 @@ In production Unity builds, root GameObjects are frequently not rooted in Mono G
 | **Enum Images** | `mono_enumImagesEx()` | Returns a table of each image. Each entry contains the `Image` (imagehandle) and `Path` (the name of the image)  |
 | **Enum Classes** | `mono_image_enumClassesEx(imagehandle)` | Returns a list of all the classes in the image. It contains fields like `Handle`, `Name`, `NameSpace`,`FullName`, etc... |
 | **Class Query** | `mono_findClass("Namespace.Class")` | `mono_findClass2(fullName, assembly)` |
-| **Enum Methods** | `mono_class_enumMethods(class, [includeParents])` | Returns a list of all the methods and their methodhandles, and other information |
+| **Enum Methods** | `mono_class_enumMethods(class, [includeParents])` | Returns a list of all the methods. Each entry contains the methodhandle and the name. For more information call the other `mono_method_*` functions like `mono_method_getSignature(methodHandle)` |
 | **Method Query** | `mono_class_findMethod(class, name)` | `mono_findMethod(namespace, class, method, params)` |
 | **JIT Compile** | `mono_compile_method(method)` | Native entry point address returned |
 | **Field Info** | `mono_class_enumFields(class, true)` | Returns table of `{name, offset, isStatic, ...}` |

@@ -796,11 +796,20 @@ function ai_createMemoryRecord(args)
           mr.OffsetText[i-1]=args.offsets[i]
         end
       end       
-    end  
+    end 
     
     if parent then
       mr.parent=parent
     end
+    
+    if args.active then
+      mr.Active=args.active
+    end
+    
+    if args.value then
+      mr.Value=args.value
+    end
+    
     return {status='success', memoryRecordID=mr.ID}
   end)
 end
@@ -1588,7 +1597,9 @@ registerAITool('createMemoryRecord',[[Creates a new memory record and adds it to
                                           
                                           script={type='STRING',description='An autoassembler script with [ENABLE] and [DISABLE] tags. It triggers when the Active checkbox gets checked/unchecked.  If set, vartype of vtAutoAssembler is assumed'},
                                           async={type='BOOLEAN', description='If true the autoassembler script will run in a seperate thread when activating, not freezing the user\'s UI'},
-                                          parentNode={type='INTEGER', description='The parent memoryRecordID'}
+                                          parentNode={type='INTEGER', description='The parent memoryRecordID'},
+                                          active={type='BOOLEAN', description='If true will activate the memory record on creation. Default is false'},
+                                          value={type='STRING', description='If set will set the value after creating the memory record. Combined with `active` this will freeze the address to the given value'} 
                                           }
                                           ,
                                           {
