@@ -381,10 +381,10 @@ In production Unity builds, root GameObjects are frequently not rooted in Mono G
 | Task | Primary Function | Secondary / Alternative |
 | :--- | :--- | :--- |
 | **Connect** | `LaunchMonoDataCollector()` | `getMonoPipe()`, `mono_isValid()` |
-| **Enum Images** | `mono_enumImagesEx()` | Returns a table of each image. Each entry contains the `Image` (imagehandle) and `Path` (the name of the image)  |
+| **Enum Images** | `mono_enumImagesEx()` | Returns an indexed table describing each image. each entry contains a table with `{Image = qword, Path = string}`. where Image is the imagehandle and Path is the name of the image |
 | **Enum Classes** | `mono_image_enumClassesEx(imagehandle)` | Returns a list of all the classes in the image. It contains fields like `Handle`, `Name`, `NameSpace`,`FullName`, etc... |
 | **Class Query** | `mono_findClass("Namespace.Class")` | `mono_findClass2(fullName, assembly)` |
-| **Enum Methods** | `mono_class_enumMethods(class, [includeParents])` | Returns a list of all the methods. Each entry contains the methodhandle and the name. For more information call the other `mono_method_*` functions like `mono_method_getSignature(methodHandle)` |
+| **Enum Methods** | `mono_class_enumMethods(class, [includeParents])` | Returns an indexed list of all the methods. Each entry contains the a table with `{name = string, flags = integer, method = qword}`. For more information call the other `mono_method_*` functions like `mono_method_getSignature(method)` |
 | **Method Query** | `mono_class_findMethod(class, name)` | `mono_findMethod(namespace, class, method, params)` |
 | **JIT Compile** | `mono_compile_method(method)` | Native entry point address returned |
 | **Field Info** | `mono_class_enumFields(class, true)` | Returns table of `{name, offset, isStatic, ...}` |

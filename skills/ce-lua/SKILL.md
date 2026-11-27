@@ -1,6 +1,6 @@
 ---
 name: ce-lua
-description: Cheat Engine Lua scripting, API discovery with getCELuaDocumentationByKeyword and getCELuaDocumentationByLineNumber, memory scanning with AOBScan, StringList and Strings handling, native Pascal Object lifecycle (.destroy), thread synchronization, and GUI automation. Use this skill when writing, debugging, or analyzing Cheat Engine Lua scripts, automating Cheat Engine via Lua, scanning memory, or inspecting CE Lua documentation.
+description: Cheat Engine Lua scripting, API discovery with getCELuaDocumentationByKeyword and getCELuaDocumentationByLineNumber, memory scanning with AOBScan, StringList and Strings handling, executing registered AI tools directly from Lua via the aitools table, native Pascal Object lifecycle (.destroy), thread synchronization, and GUI automation. Use this skill when writing, debugging, or analyzing Cheat Engine Lua scripts, automating Cheat Engine via Lua, scanning memory, or inspecting CE Lua documentation.
 ---
 
 # Cheat Engine Lua Scripting Skill (`ce-lua`)
@@ -14,6 +14,7 @@ Cheat Engine embeds a customized **Lua 5.3** engine running inside the Applicati
 Activate this skill when:
 - Writing or debugging Cheat Engine Lua scripts, plugins, autorun extensions, or table scripts.
 - Looking up Cheat Engine Lua function signatures dynamically using `getCELuaDocumentationByKeyword` and `getCELuaDocumentationByLineNumber`.
+- Executing registered AI tools directly from inside Lua by calling `aitools.<toolName>.functionToCall({argName = value, ...})` with a table of argument names and values, enabling multi-step automation without round-trip latency.
 - Scanning target process memory for byte patterns using `AOBScan`, `AOBScanUnique`, or `AOBScanModuleUnique`.
 - Working with Cheat Engine's native Pascal class wrappers, specifically `StringList` and `Strings`.
 - Managing native object lifecycles using `object.destroy()`.
@@ -56,6 +57,111 @@ Reads a contiguous block of documentation starting from a specific line number.
   - `linenr` (`integer`, required): Starting line number in `celua.txt`.
   - `linecount` (`integer`, required): Number of lines to read.
 - **Usage**: Once `getCELuaDocumentationByKeyword` pinpoints where a class or function is defined, use `getCELuaDocumentationByLineNumber` to read the complete class definition or multi-line function documentation.
+
+---
+
+## Calling AI Tools from Inside Lua (`aitools`)
+
+Cheat Engine's AI extension registers all available AI tools into a global Lua table named `aitools` (`_G.aitools`). 
+
+When an AI agent or LLM writes Lua code to run inside Cheat Engine (for instance, via `executeLuaCode`, the Lua Engine window, or within table scripts), it is often far more efficient to **call the registered AI tools directly from inside Lua** rather than issuing separate round-trip tool calls back and forth across the model context window.
+
+> [!TIP]
+> **Why call tools from Lua?**
+> - **Zero Round-Trip Latency**: Execute an entire pipeline (e.g. scan memory -> refine results -> read data -> write memory or create cheat table records) in a single execution turn.
+> - **In-Process Loops & Logic**: Loop over memory addresses, filter data, and inspect values directly inside Lua without serializing thousands of bytes over JSON-RPC.
+> - **Tool Definitions**: You do not need to guess function signatures—the tool names, parameter schemas, and descriptions are already provided by your active `tools` declarations.
+
+### Calling Convention: `aitools.<toolName>.functionToCall(argsTable)`
+
+Every registered tool in `aitools` exposes a `functionToCall` property.
+
+> [!IMPORTANT]
+> `functionToCall` does **NOT** accept a list of positional arguments (e.g. `func(val1, val2)` or an array `{val1, val2}`).
+> It strictly takes **a single table containing the argument names and their values** as key-value pairs:
+> `{ argumentName1 = value1, argumentName2 = value2 }`.
+
+```lua
+-- INCORRECT: Do not pass positional arguments or an array of values:
+-- aitools.readMemoryBlock.functionToCall("75288C54C360", "vtQword", 4)
+-- aitools.readMemoryBlock.functionToCall({"75288C54C360", "vtQword", 4})
+
+-- CORRECT: Pass a table containing the argument names and their values:
+return aitools.readMemoryBlock.functionToCall({
+  address = "75288C54C360",
+  elementType = "vtQword",
+  count = 4
+})
+```
+
+You can also use bracket notation for dynamic tool names:
+```lua
+aitools["readMemoryBlock"].functionToCall({
+  address = "75288C54C360",
+  elementType = "vtQword",
+  count = 4
+})
+```
+
+### Parameter Passing & Return Values
+
+1. **Named Arguments Table**:
+   The keys in the table passed to `functionToCall` must match the parameter names specified in the tool's declaration (e.g. `address`, `elementType`, `count`, `value`, `scanoption`, etc.).
+
+2. **Parameterless Tools**:
+   For tools that require no arguments, pass an empty table `{}`:
+   ```lua
+   local procInfo = aitools.getOpenedProcessName.functionToCall({})
+   ```
+
+3. **Direct Return Values**:
+   `functionToCall` directly returns the tool's result table (or value). When executing inside `executeLuaCode`, prepending `return` returns that result directly to the caller:
+   ```lua
+   local res = aitools.getTargetedProcessInfo.functionToCall({})
+   if res.is64Bit then
+     print("Target is 64-bit architecture")
+   end
+   return res
+   ```
+
+### Pipelining Multi-Step Operations in Lua
+
+Instead of making multiple separate tool calls across separate chat turns, combine them into one Lua script:
+
+```lua
+-- Step 1: Scan for value 1000
+local scan = aitools.scanMemory.functionToCall({
+  value = "1000",
+  vartype = "vtDword",
+  scanoption = "soExactValue"
+})
+
+if not scan or not scan.scannerID then
+  return { error = "Scan failed", details = scan }
+end
+
+local scanID = scan.scannerID
+
+-- Step 2: Retrieve the top found addresses
+local results = aitools.getResultsAndValues.functionToCall({
+  scanID = scanID,
+  startIndex = 0,
+  count = 5
+})
+
+-- Step 3: Create a memory record for the first result
+if results and results.results and #results.results > 0 then
+  local firstAddress = results.results[1].address
+  local record = aitools.createMemoryRecord.functionToCall({
+    description = "Player Health",
+    address = firstAddress,
+    vartype = "vtDword"
+  })
+  return { status = "success", address = firstAddress, memoryRecordID = record.memoryRecordID }
+else
+  return { status = "no results found" }
+end
+```
 
 ---
 
